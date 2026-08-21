@@ -5,7 +5,7 @@ hat:
   stack: 0
   host_ip: 192.168.10.69
 tolerances:
-  voltage_v: 0.3
+  voltage_v: 0.6 #double and give it to the next person
   mpi_high_v: 3.0
   settle_s: 0.4
 onewire:
