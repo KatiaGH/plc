@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "plc36-automated-tests"
+version = "0.1.0"
+description = "Pytest hardware tests for Shelly PLC-36 vs MegaIND HAT"
+requires-python = ">=3.10,<4.0"
+dependencies = [
+    "pytest ~= 8.3.3",
+    "pytest-timeout ~= 2.3.1",
+    "httpx ~= 0.28.1",
+    "pyyaml ~= 6.0",
+    "SMmegaind",
+    "pymodbus ~= 3.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["ruff ~= 0.12.5"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+log_cli = true
+log_level = "INFO"
+addopts = "-ra --timeout=60"
+timeout_method = "thread"
+markers = [
+    "hardware: requires DUT and/or HAT on the bench",
+    "analog: analog voltage tests",
+    "digital: digital I/O tests",
+    "onewire: 1-Wire / DS18B20 tests",
+    "needs_host_control: requires host-writable virtual components",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"

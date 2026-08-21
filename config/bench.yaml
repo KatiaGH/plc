@@ -1,0 +1,14 @@
+dut:
+  ip: 192.168.10.247
+  rpc_timeout_s: 10
+hat:
+  stack: 0
+  host_ip: 192.168.10.69
+tolerances:
+  voltage_v: 0.3
+  mpi_high_v: 3.0
+  settle_s: 0.4
+onewire:
+  min_celsius: -20
+  max_celsius: 80
+  plausible_room_celsius: [5, 45]
