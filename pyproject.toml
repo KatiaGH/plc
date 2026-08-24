@@ -25,9 +25,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-log_cli = true
-log_level = "INFO"
-addopts = "-ra --timeout=60"
+log_cli = false
+log_level = "WARNING"
+addopts = "-v -ra --timeout=60"
 timeout_method = "thread"
 markers = [
     "hardware: requires DUT and/or HAT on the bench",
