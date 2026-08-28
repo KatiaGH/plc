@@ -11,12 +11,6 @@ from plc36_testkit.wait import settle
 HAT_OD_FOR_II = 1
 
 
-@pytest.fixture(autouse=True)
-def restore_od1(hat: HatClient) -> None:
-    yield
-    hat.od_off(HAT_OD_FOR_II)
-
-
 @pytest.mark.hardware
 @pytest.mark.digital
 @pytest.mark.parametrize("channel", OPTO_ISOLATED_INPUTS, ids=lambda c: c.name)

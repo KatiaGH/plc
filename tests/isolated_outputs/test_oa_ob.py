@@ -4,22 +4,9 @@ import pytest
 
 from plc36_testkit.config import BenchConfig
 from plc36_testkit.hat import HatClient
-from plc36_testkit.mapping import ISOLATED_OUTPUT_PAIRS, IsolatedOutputPair, OPTO_ISOLATED_OUTPUTS
+from plc36_testkit.mapping import ISOLATED_OUTPUT_PAIRS, IsolatedOutputPair
 from plc36_testkit.rpc import DutRpcClient, DutRpcError
 from plc36_testkit.wait import settle
-
-
-@pytest.fixture(autouse=True)
-def restore_isolated_outputs(dut: DutRpcClient, hat: HatClient) -> None:
-    yield
-    hat.all_safe()
-    for ch in OPTO_ISOLATED_OUTPUTS:
-        if ch.name == "OB4":
-            continue
-        try:
-            dut.boolean_set(ch.rpc_id, False)
-        except DutRpcError:
-            pass
 
 
 def _set_od(dut: DutRpcClient, channel, value: bool) -> None:
