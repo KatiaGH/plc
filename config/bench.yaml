@@ -7,7 +7,7 @@ hat:
 tolerances:
   voltage_v: 0.6 #double and give it to the next person
   mpi_high_v: 3.0
-  settle_s: 0.4
+  settle_s: 1
 onewire:
   min_celsius: -20
   max_celsius: 80

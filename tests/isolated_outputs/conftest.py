@@ -35,14 +35,14 @@ def _restore_isolated_pair(
     settle(bench)
 
 
-@pytest.fixture(autouse=True)
-def restore_isolated_outputs(
-    dut: DutRpcClient,
-    hat: HatClient,
-    bench: BenchConfig,
-    pair: IsolatedOutputPair,
-) -> Iterator[None]:
-    """Keep the parameterized isolated-output path safe around each test."""
-    _restore_isolated_pair(dut, hat, bench, pair)
-    yield
-    _restore_isolated_pair(dut, hat, bench, pair)
+# @pytest.fixture(autouse=True)
+# def restore_isolated_outputs(
+#     dut: DutRpcClient,
+#     hat: HatClient,
+#     bench: BenchConfig,
+#     pair: IsolatedOutputPair,
+# ) -> Iterator[None]:
+#     """Keep the parameterized isolated-output path safe around each test."""
+#     _restore_isolated_pair(dut, hat, bench, pair)
+#     yield
+#     _restore_isolated_pair(dut, hat, bench, pair)

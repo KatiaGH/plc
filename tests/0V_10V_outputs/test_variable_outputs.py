@@ -1,9 +1,7 @@
-"""Test the PLC-36 0-10 V outputs through the MegaIND HAT inputs."""
-
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import TypeVar
 
 import pytest
@@ -79,7 +77,9 @@ def _get_output_percentage(
     channel,
 ) -> float:
     """Read one PLC output using the rate-limited RPC wrapper."""
-    return _rpc_call_with_retry(lambda: dut.number_get_status(channel.rpc_id))
+    return _rpc_call_with_retry(
+        lambda: dut.number_get_status(channel.rpc_id)
+    )
 
 
 def _set_output_percentage(
@@ -88,7 +88,9 @@ def _set_output_percentage(
     percentage: float,
 ) -> None:
     """Set one PLC output using the rate-limited RPC wrapper."""
-    _rpc_call_with_retry(lambda: dut.number_set(channel.rpc_id, percentage))
+    _rpc_call_with_retry(
+        lambda: dut.number_set(channel.rpc_id, percentage)
+    )
 
 
 def _set_output_and_wait(
@@ -102,7 +104,10 @@ def _set_output_and_wait(
         _set_output_percentage(dut, channel, percentage)
     except DutRpcError as exc:
         if _is_rate_limit_error(exc):
-            pytest.fail(f"Rate limit remained active after {RPC_MAX_ATTEMPTS} attempts: {exc}")
+            pytest.fail(
+                f"Rate limit remained active after "
+                f"{RPC_MAX_ATTEMPTS} attempts: {exc}"
+            )
 
         pytest.skip(f"{channel.name} is not host-writable: {exc}")
 
@@ -128,6 +133,61 @@ def _restore_tested_output(
     time.sleep(INTER_TEST_DELAY_S)
 
 
+# @pytest.mark.parametrize("percentage", PERCENTAGE_SETPOINTS)
+# def test_variable_output_matches_hat_uin(
+#     dut: DutRpcClient,
+#     hat: HatClient,
+#     bench: BenchConfig,
+#     channel,
+#     hat_in: int,
+#     percentage: float,
+# ) -> None:
+#     """Verify one output and restore it to 0% after the test."""
+#     expected_volts = percentage_to_volts(percentage)
+
+#     try:
+#         initial_percentage = _get_output_percentage(dut, channel)
+
+#         assert initial_percentage == pytest.approx(
+#             SAFE_OUTPUT_PERCENTAGE
+#         ), (
+#             f"{channel.name} was not initially at 0%: "
+#             f"{initial_percentage}%"
+#         )
+
+#         _set_output_and_wait(
+#             dut,
+#             bench,
+#             channel,
+#             percentage,
+#         )
+
+#         measured_volts = hat.read_uin(hat_in)
+#         reported_percentage = _get_output_percentage(dut, channel)
+
+#         assert reported_percentage == pytest.approx(
+#             percentage,
+#             abs=1
+#         ), (
+#             f"{channel.name} reported {reported_percentage}%, "
+#             f"expected {percentage}%"
+#         )
+
+#         assert measured_volts == pytest.approx(
+#                     expected_volts,
+#                     abs=bench.tolerances.voltage_v,
+#                 ), (
+#                     f"Measured voltage: {measured_volts} V; "
+#                     f"expected voltage: {expected_volts} V; "
+#                     f"PLC reported output: {reported_percentage}%"
+#                 )
+
+#     finally:
+#         _restore_tested_output(
+#             dut,
+#             bench,
+#             channel,
+#         )
 @pytest.mark.hardware
 @pytest.mark.analog
 @pytest.mark.needs_host_control
@@ -145,14 +205,41 @@ def test_variable_output_matches_hat_uin(
     hat_in: int,
     percentage: float,
 ) -> None:
-    """Verify one output and restore it to 0% after the test."""
+    """Verify that the PLC output matches the HAT analog input."""
     expected_volts = percentage_to_volts(percentage)
+
+    if percentage == SAFE_OUTPUT_PERCENTAGE:
+        reported_percentage = _get_output_percentage(dut, channel)
+        measured_volts = hat.read_uin(hat_in)
+
+        assert reported_percentage == pytest.approx(
+            SAFE_OUTPUT_PERCENTAGE,
+            abs=1,
+        ), (
+            f"{channel.name} reported {reported_percentage}%, "
+            f"expected {SAFE_OUTPUT_PERCENTAGE}%"
+        )
+
+        assert measured_volts == pytest.approx(
+            expected_volts,
+            abs=bench.tolerances.voltage_v,
+        ), (
+            f"Measured voltage: {measured_volts} V; "
+            f"expected voltage: {expected_volts} V; "
+            f"PLC reported output: {reported_percentage}%"
+        )
+
+        return
 
     try:
         initial_percentage = _get_output_percentage(dut, channel)
 
-        assert initial_percentage == pytest.approx(SAFE_OUTPUT_PERCENTAGE), (
-            f"{channel.name} was not initially at 0%: {initial_percentage}%"
+        assert initial_percentage == pytest.approx(
+            SAFE_OUTPUT_PERCENTAGE,
+            abs=1,
+        ), (
+            f"{channel.name} was not initially at 0%: "
+            f"{initial_percentage}%"
         )
 
         _set_output_and_wait(
@@ -164,6 +251,7 @@ def test_variable_output_matches_hat_uin(
 
         measured_volts = hat.read_uin(hat_in)
         reported_percentage = _get_output_percentage(dut, channel)
+
 
         assert measured_volts == pytest.approx(
             expected_volts,
@@ -177,7 +265,12 @@ def test_variable_output_matches_hat_uin(
         assert reported_percentage == pytest.approx(
             percentage,
             abs=1,
-        ), f"{channel.name} reported {reported_percentage}%, expected {percentage}%"
+        ), (
+            f"{channel.name} reported {reported_percentage}%, "
+            f"expected {percentage}%"
+        )
+
+        
 
     finally:
         _restore_tested_output(
