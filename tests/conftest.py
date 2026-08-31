@@ -1,18 +1,14 @@
 from __future__ import annotations
 
-import logging
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from plc36_testkit.config import BenchConfig, load_bench
-from plc36_testkit.dut_log import DutLogReader
 from plc36_testkit.hat import HatClient, megaind
 from plc36_testkit.logging import dump_failure_log, init_logging
-from plc36_testkit.mapping import OUTPUTS_0_10V, RELAYS
-from plc36_testkit.rpc import DutRpcClient, DutRpcError
-
-_log = logging.getLogger("framework")
+from plc36_testkit.rpc import DutRpcClient
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -57,53 +53,34 @@ def bench(pytestconfig: pytest.Config) -> BenchConfig:
 
 
 @pytest.fixture(scope="session")
-def dut(bench: BenchConfig) -> DutRpcClient:
+def dut(bench: BenchConfig) -> Iterator[DutRpcClient]:
+    """Provide one validated DUT RPC client for the test session."""
     client = DutRpcClient(bench.dut.ip, bench.dut.rpc_timeout_s)
+
     try:
-        status = client.plc_get_status()
-    except Exception as exc:
-        pytest.skip(f"PLC RPC unavailable: {exc}")
-    if status.get("state") != "operational":
-        pytest.skip(f"PLC not operational: {status}")
-    try:
-        for ch in OUTPUTS_0_10V:
-            client.number_set(ch.rpc_id, 0.0)
-        for relay in RELAYS:
-            client.boolean_set(relay.rpc_id, False)
-    except DutRpcError as exc:
-        _log.warning("idle restore skipped (not host-writable): %s", exc)
-    yield client
-    try:
-        for ch in OUTPUTS_0_10V:
-            client.number_set(ch.rpc_id, 0.0)
-        for relay in RELAYS:
-            client.boolean_set(relay.rpc_id, False)
-    except DutRpcError:
-        pass
+        try:
+            status = client.plc_get_status()
+        except Exception as exc:
+            pytest.skip(f"PLC RPC unavailable: {exc}")
+
+        if status.get("state") != "operational":
+            pytest.skip(f"PLC not operational: {status}")
+
+        yield client
     finally:
         client.close()
 
 
 @pytest.fixture(scope="session")
-def hat(bench: BenchConfig) -> HatClient:
+def hat(bench: BenchConfig) -> Iterator[HatClient]:
+    """Provide one validated MegaIND client for the test session."""
     if megaind is None:
         pytest.skip("MegaIND library is not installed")
+
     try:
         client = HatClient(bench.hat.stack)
         client.firmware_version()
     except Exception as exc:
         pytest.skip(f"MegaIND not available: {exc}")
-    client.all_safe()
+
     yield client
-    client.all_safe()
-
-
-@pytest.fixture
-def dut_logs(pytestconfig: pytest.Config, bench: BenchConfig) -> DutLogReader | None:
-    if not pytestconfig.getoption("--capture-dut-logs"):
-        yield None
-        return
-    reader = DutLogReader(bench.dut.ip, bench.dut.rpc_timeout_s)
-    reader.start()
-    yield reader
-    reader.close()

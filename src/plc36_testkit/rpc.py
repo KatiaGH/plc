@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
-
 import httpx
+import json
+from typing import Any
+from datetime import datetime, timezone
+
+from plc36_testkit.logging import OUTPUT_DIR
 
 log = logging.getLogger("framework.plc36")
 
@@ -18,14 +21,40 @@ class DutRpcClient:
         self._url = f"http://{ip}/rpc"
         self._http = httpx.Client(timeout=timeout_s)
 
+    def _save_rpc_response(
+        self,
+        method: str,
+        params: dict[str, Any] | None,
+        body: Any,
+    ) -> None:
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        path = OUTPUT_DIR / "rpc_responses.jsonl"
+
+        record = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "method": method,
+            "params": params or {},
+            "body": body,
+        }
+
+        with path.open("a", encoding="utf-8") as file:
+            json.dump(record, file, ensure_ascii=False)
+            file.write("\n")
+
+
     def call(self, method: str, params: dict[str, Any] | None = None) -> Any:
         payload = {"id": 1, "method": method, "params": params or {}}
         log.info("RPC %s %s", method, params)
+
         resp = self._http.post(self._url, json=payload)
         resp.raise_for_status()
+
         body = resp.json()
+        self._save_rpc_response(method, params, body)
+
         if body.get("error"):
             raise DutRpcError(f"{method}: {body['error']}")
+
         log.debug("RPC result %s", body.get("result"))
         return body.get("result")
 
