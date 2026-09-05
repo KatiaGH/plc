@@ -31,11 +31,11 @@ Without a HAT or DUT, hardware tests skip. `tests/4mA_20mA_inputs/` and `tests/r
 The responsive dashboard runs on the Raspberry Pi and provides:
 
 - bench and device connectivity status;
-- Run all, test-suite, and individual-test controls;
-- live progress, results, logs, and safe cancellation;
+- Run all, test-category, and individual-test controls;
+- live progress, results, and safe cancellation;
 - historical pass-rate and duration statistics;
 - structured voltage, accuracy, and DS18B20 metrics;
-- per-run JSON, CSV, XML, JSONL, and log downloads.
+- an in-app log viewer and one JSONL log download per run.
 
 Start it from the repository root:
 

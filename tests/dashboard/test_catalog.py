@@ -5,7 +5,7 @@ from pathlib import Path
 from plc36_dashboard.catalog import CATEGORIES, collect_tests
 
 
-def test_catalog_marks_placeholder_suites_unavailable() -> None:
+def test_catalog_marks_placeholder_tests_unavailable() -> None:
     states = {category.id: category.available for category in CATEGORIES}
     assert states["rs485"] is False
     assert states["current_loop"] is False

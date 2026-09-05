@@ -63,7 +63,7 @@ function shortSelection(run) {
 
 function setControlsDisabled(disabled) {
   $("#run-all").disabled = disabled || !state.benchReady;
-  document.querySelectorAll(".suite-card button[data-category]").forEach((button) => {
+  document.querySelectorAll(".test-card button[data-category]").forEach((button) => {
     button.disabled = disabled || !state.benchReady || button.dataset.available !== "true";
   });
   $("#open-picker").disabled = disabled || !state.benchReady;
@@ -74,22 +74,22 @@ async function loadCatalog() {
   state.catalog = catalog;
   const availableTests = catalog.tests.length;
   $("#all-test-count").textContent = `${availableTests} collected test${availableTests === 1 ? "" : "s"}`;
-  renderSuites();
+  renderTestCards();
   renderTestPicker();
   if (catalog.collection_error) toast(`Test collection warning: ${catalog.collection_error}`, true);
 }
 
-function renderSuites() {
-  $("#suite-grid").innerHTML = state.catalog.categories.map((category, index) => `
-    <article class="suite-card" data-accent="${escapeHtml(category.accent)}">
-      <div class="suite-top">
-        <span class="suite-index">${String(index + 1).padStart(2, "0")}</span>
-        <span class="suite-count">${category.available ? `${category.test_count} tests` : "planned"}</span>
+function renderTestCards() {
+  $("#test-grid").innerHTML = state.catalog.categories.map((category, index) => `
+    <article class="test-card" data-accent="${escapeHtml(category.accent)}">
+      <div class="test-card-top">
+        <span class="test-card-index">${String(index + 1).padStart(2, "0")}</span>
+        <span class="test-card-count">${category.available ? `${category.test_count} tests` : "planned"}</span>
       </div>
       <h3>${escapeHtml(category.name)}</h3>
       <p>${escapeHtml(category.description)}</p>
       <button type="button" data-category="${escapeHtml(category.id)}" data-available="${category.available}">
-        ${category.available ? "Run suite →" : "Not implemented"}
+        ${category.available ? "Run tests →" : "Not implemented"}
       </button>
     </article>
   `).join("");
@@ -162,7 +162,7 @@ async function loadSummary() {
   const summary = await api("/api/summary");
   $("#pass-rate").textContent = summary.passed_tests + summary.failed_tests ? `${summary.pass_rate.toFixed(1)}%` : "—";
   $("#total-runs").textContent = summary.total_runs;
-  $("#run-outcomes").textContent = summary.total_runs ? `${summary.passed_runs} passed · ${summary.failed_runs} failed` : "No completed runs";
+  $("#run-outcomes").textContent = summary.total_runs ? `${summary.passed_runs} passed · ${summary.failed_runs} failed · ${summary.skipped_runs} skipped` : "No completed runs";
   $("#average-duration").textContent = summary.total_runs ? formatDuration(summary.average_duration_s) : "—";
   $("#failed-tests").textContent = summary.failed_tests;
   renderRunChart(summary.recent_runs);
@@ -188,9 +188,16 @@ function renderHardwareMetrics(metrics) {
 function renderRunChart(runs) {
   const ordered = [...runs].reverse();
   $("#run-chart").innerHTML = ordered.length ? ordered.map((run) => {
-    const decided = run.passed + run.failed;
-    const height = Math.max(18, decided ? Math.round((run.passed / decided) * 100) : 25);
-    return `<span class="run-bar ${escapeHtml(run.status)}" style="height:${height}%" title="${escapeHtml(run.status)} · ${formatDate(run.created_at)}"></span>`;
+    const total = run.passed + run.failed + run.skipped;
+    const passHeight = total ? (run.passed / total) * 100 : 0;
+    const failHeight = total ? (run.failed / total) * 100 : 0;
+    const skipHeight = total ? (run.skipped / total) * 100 : 0;
+    const title = `${run.passed} passed · ${run.failed} failed · ${run.skipped} skipped · ${formatDate(run.created_at)}`;
+    return `<span class="run-stack ${escapeHtml(run.status)}" title="${escapeHtml(title)}">
+      <span class="run-segment pass" style="height:${passHeight}%"></span>
+      <span class="run-segment fail" style="height:${failHeight}%"></span>
+      <span class="run-segment skip" style="height:${skipHeight}%"></span>
+    </span>`;
   }).join("") : '<span class="empty-cell">Run results will appear here.</span>';
 }
 
@@ -203,7 +210,7 @@ async function loadRuns() {
       <td><span class="result-cluster"><span class="pass">${run.passed}P</span><span class="fail">${run.failed}F</span><span class="skip">${run.skipped}S</span></span></td>
       <td>${formatDuration(run.duration_s)}</td>
       <td>${formatDate(run.started_at || run.created_at)}</td>
-      <td><button class="view-button" data-run-id="${escapeHtml(run.id)}">View</button></td>
+      <td><button class="view-button" data-run-id="${escapeHtml(run.id)}">Details & logs</button></td>
     </tr>
   `).join("") : '<tr><td colspan="6" class="empty-cell">No recorded runs yet.</td></tr>';
   document.querySelectorAll(".view-button").forEach((button) => button.addEventListener("click", () => showRunDetail(button.dataset.runId)));
@@ -233,21 +240,15 @@ async function startRun(selectionType, selection) {
 function connectRun(runId) {
   state.activeRunId = runId;
   $("#active-panel").classList.remove("hidden");
+  $("#run-state-label").innerHTML = '<span class="pulse-dot"></span> LIVE RUN';
   $("#active-title").textContent = "Test run in progress";
   $("#current-test").textContent = "Collecting selected tests…";
-  $("#live-log").textContent = "";
   $("#stop-run").disabled = true;
   setControlsDisabled(true);
   $("#active-panel").scrollIntoView({ behavior: "smooth", block: "start" });
   if (state.eventSource) state.eventSource.close();
   const source = new EventSource(`/api/runs/${encodeURIComponent(runId)}/events`);
   state.eventSource = source;
-  source.addEventListener("log", (event) => {
-    const log = $("#live-log");
-    log.textContent += JSON.parse(event.data).text;
-    if (log.textContent.length > 120000) log.textContent = log.textContent.slice(-100000);
-    log.scrollTop = log.scrollHeight;
-  });
   source.addEventListener("snapshot", (event) => updateActiveRun(JSON.parse(event.data)));
   source.addEventListener("complete", async (event) => {
     const run = JSON.parse(event.data);
@@ -255,6 +256,7 @@ function connectRun(runId) {
     source.close();
     state.activeRunId = null;
     state.eventSource = null;
+    $("#run-state-label").textContent = "RUN COMPLETE";
     $("#active-title").textContent = run.status === "passed" ? "Run completed successfully" : `Run ${run.status}`;
     $("#stop-run").disabled = true;
     await Promise.all([loadBench(), loadSummary(), loadRuns()]);
@@ -290,7 +292,10 @@ async function stopActiveRun() {
 
 async function showRunDetail(runId) {
   try {
-    const run = await api(`/api/runs/${encodeURIComponent(runId)}`);
+    const [run, logData] = await Promise.all([
+      api(`/api/runs/${encodeURIComponent(runId)}`),
+      api(`/api/runs/${encodeURIComponent(runId)}/logs`),
+    ]);
     $("#detail-title").textContent = shortSelection(run);
     const metrics = run.metrics || [];
     const groupedMetrics = metrics.length ? `
@@ -303,10 +308,10 @@ async function showRunDetail(runId) {
       <ul class="detail-list">${run.tests.map((test) => `
         <li><span class="status-badge ${escapeHtml(test.outcome)}">${escapeHtml(test.outcome)}</span><code>${escapeHtml(test.nodeid)}</code><span>${formatDuration(test.duration_s)}</span></li>
       `).join("")}</ul>` : '<p class="empty-cell">No individual results were recorded.</p>';
-    const artifacts = [
-      { name: "Run data (JSON)", url: `/api/runs/${encodeURIComponent(run.id)}/export.json` },
-      ...(run.artifacts || []),
-    ];
+    const logText = (logData.records || []).map((record) => {
+      const timestamp = record.timestamp ? `[${record.timestamp}] ` : "";
+      return `${timestamp}${record.message}`;
+    }).join("\n");
     $("#detail-content").innerHTML = `
       <div class="detail-summary">
         <article><small>STATUS</small><strong>${escapeHtml(run.status)}</strong></article>
@@ -315,8 +320,11 @@ async function showRunDetail(runId) {
         <article><small>COMMIT</small><strong>${escapeHtml(run.git_sha || "—")}</strong></article>
       </div>
       ${tests}${groupedMetrics}
-      <h3>Downloads</h3>
-      <div class="artifact-links">${artifacts.map((item) => `<a href="${escapeHtml(item.url)}" download>${escapeHtml(item.name)}</a>`).join("")}</div>
+      <h3>Logs</h3>
+      <pre class="run-log" tabindex="0">${escapeHtml(logText || "No logs are available for this run.")}</pre>
+      <div class="artifact-links">
+        ${run.has_logs ? `<a href="/api/runs/${encodeURIComponent(run.id)}/logs/download" download>Download logs (.jsonl)</a>` : ""}
+      </div>
     `;
     $("#run-detail").showModal();
   } catch (error) { toast(error.message, true); }

@@ -25,7 +25,7 @@
         <div class="command-copy">
           <p class="eyebrow">HARDWARE-IN-THE-LOOP</p>
           <h1 id="page-title">Run the bench.<br><span>Read every signal.</span></h1>
-          <p class="lede">Launch the complete PLC-36 suite or choose exactly which hardware path to validate.</p>
+          <p class="lede">Run all PLC-36 tests or choose exactly which hardware path to validate.</p>
         </div>
         <div class="primary-action">
           <button class="run-all" id="run-all" type="button">
@@ -52,22 +52,22 @@
         <button class="icon-button" id="refresh-bench" title="Refresh bench status" aria-label="Refresh bench status">↻</button>
       </section>
 
-      <section class="workspace" aria-labelledby="suites-title">
+      <section class="workspace" aria-labelledby="tests-title">
         <div class="section-heading">
-          <div><p class="eyebrow">TEST SUITES</p><h2 id="suites-title">Choose a hardware path</h2></div>
+          <div><p class="eyebrow">TESTS</p><h2 id="tests-title">Choose a hardware path</h2></div>
           <button class="secondary-button" id="open-picker" type="button">Choose individual tests</button>
         </div>
-        <div class="suite-grid" id="suite-grid" aria-live="polite"></div>
+        <div class="test-grid" id="test-grid" aria-live="polite"></div>
       </section>
 
       <section class="active-panel hidden" id="active-panel" aria-labelledby="active-title">
         <div class="active-header">
           <div>
-            <p class="eyebrow"><span class="pulse-dot"></span> LIVE RUN</p>
+            <p class="eyebrow" id="run-state-label"><span class="pulse-dot"></span> LIVE RUN</p>
             <h2 id="active-title">Preparing test run</h2>
             <p id="current-test">Waiting for collection…</p>
           </div>
-          <button class="stop-button" id="stop-run" type="button" disabled>Stop safely</button>
+          <button class="stop-button" id="stop-run" type="button" disabled>Stop</button>
         </div>
         <div class="progress-track" aria-label="Test progress"><span id="progress-bar"></span></div>
         <div class="run-counters">
@@ -76,10 +76,6 @@
           <span class="failed"><strong id="failed-count">0</strong> failed</span>
           <span class="skipped"><strong id="skipped-count">0</strong> skipped</span>
         </div>
-        <details class="log-panel" open>
-          <summary>Live output</summary>
-          <pre id="live-log" tabindex="0" aria-label="Live pytest output"></pre>
-        </details>
       </section>
 
       <section class="metrics-section" aria-labelledby="metrics-title">

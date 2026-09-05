@@ -188,6 +188,74 @@ class DashboardDatabase:
                 ),
             )
 
+    def replace_results(
+        self,
+        run_id: str,
+        results: list[dict[str, Any]],
+    ) -> None:
+        """Replace a run's results with the authoritative JUnit test cases."""
+        with self._connect() as db:
+            db.execute("DELETE FROM test_results WHERE run_id = ?", (run_id,))
+            db.executemany(
+                """
+                INSERT INTO test_results(run_id, nodeid, outcome, duration_s, error)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        run_id,
+                        str(result["nodeid"]),
+                        str(result["outcome"]),
+                        float(result.get("duration_s", 0)),
+                        result.get("error"),
+                    )
+                    for result in results
+                ],
+            )
+            counts = db.execute(
+                """
+                SELECT
+                    SUM(outcome = 'passed') AS passed,
+                    SUM(outcome = 'failed') AS failed,
+                    SUM(outcome = 'skipped') AS skipped
+                FROM test_results WHERE run_id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+            db.execute(
+                """
+                UPDATE runs
+                SET total = ?, passed = ?, failed = ?, skipped = ?
+                WHERE id = ?
+                """,
+                (
+                    len(results),
+                    int(counts["passed"] or 0),
+                    int(counts["failed"] or 0),
+                    int(counts["skipped"] or 0),
+                    run_id,
+                ),
+            )
+
+    def reconcile_finished_status(self, run_id: str) -> None:
+        """Correct an old terminal status after rebuilding its result counts."""
+        with self._connect() as db:
+            run = db.execute(
+                "SELECT status, passed, failed, skipped FROM runs WHERE id = ?",
+                (run_id,),
+            ).fetchone()
+            if run is None or run["status"] not in {"passed", "failed", "skipped"}:
+                return
+            if int(run["failed"] or 0) > 0:
+                status = "failed"
+            elif int(run["passed"] or 0) > 0:
+                status = "passed"
+            elif int(run["skipped"] or 0) > 0:
+                status = "skipped"
+            else:
+                return
+            db.execute("UPDATE runs SET status = ? WHERE id = ?", (status, run_id))
+
     def add_metric(
         self,
         *,
@@ -283,6 +351,7 @@ class DashboardDatabase:
                     COUNT(*) AS total_runs,
                     SUM(status = 'passed') AS passed_runs,
                     SUM(status = 'failed') AS failed_runs,
+                    SUM(status = 'skipped') AS skipped_runs,
                     AVG(CASE WHEN duration_s IS NOT NULL THEN duration_s END) AS average_duration_s
                 FROM runs
                 """
@@ -346,6 +415,7 @@ class DashboardDatabase:
             "total_runs": int(totals["total_runs"] or 0),
             "passed_runs": int(totals["passed_runs"] or 0),
             "failed_runs": int(totals["failed_runs"] or 0),
+            "skipped_runs": int(totals["skipped_runs"] or 0),
             "average_duration_s": float(totals["average_duration_s"] or 0),
             "passed_tests": passed_tests,
             "failed_tests": failed_tests,

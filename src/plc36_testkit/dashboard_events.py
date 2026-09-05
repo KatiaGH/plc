@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 
 EVENT_PREFIX = "@@PLC36_EVENT@@"
+EVENT_FILE_ENV = "PLC36_EVENT_FILE"
 
 
 def emit_dashboard_event(kind: str, **payload: Any) -> None:
@@ -14,7 +16,20 @@ def emit_dashboard_event(kind: str, **payload: Any) -> None:
     if os.getenv("PLC36_DASHBOARD_EVENTS") != "1":
         return
     event = {"kind": kind, **payload}
-    print(f"{EVENT_PREFIX}{json.dumps(event, ensure_ascii=False)}", flush=True)
+    serialized = json.dumps(event, ensure_ascii=False)
+    event_file = os.getenv(EVENT_FILE_ENV)
+    if event_file:
+        path = Path(event_file)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as file:
+            file.write(serialized + "\n")
+            file.flush()
+        return
+
+    # Retain a stdout fallback for manual diagnostics. Dashboard runs always
+    # use the dedicated event file so pytest's terminal reporter cannot mix
+    # progress characters into structured events.
+    print(f"{EVENT_PREFIX}{serialized}", flush=True)
 
 
 class MetricRecorder:

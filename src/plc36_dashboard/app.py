@@ -12,7 +12,7 @@ from typing import Any, Literal
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
@@ -60,6 +60,7 @@ class StartRunRequest(BaseModel):
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    await asyncio.to_thread(runner.reconcile_existing_runs)
     yield
     await runner.shutdown()
 
@@ -147,17 +148,9 @@ async def run_detail(run_id: str) -> dict[str, Any]:
     run = await asyncio.to_thread(database.get_run, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found.")
-    run_dir = runner.output_root / run_id
-    if run_dir.is_dir():
-        run["artifacts"] = [
-            {
-                "name": item.name,
-                "size": item.stat().st_size,
-                "url": f"/api/runs/{run_id}/artifacts/{item.name}",
-            }
-            for item in sorted(run_dir.iterdir())
-            if item.is_file()
-        ]
+    run["has_logs"] = (
+        await asyncio.to_thread(runner.ensure_run_log, run_id)
+    ) is not None
     return run
 
 
@@ -185,29 +178,25 @@ async def stop_run(run_id: str) -> dict[str, str]:
     return {"status": "stopping"}
 
 
-@app.get("/api/runs/{run_id}/export.json")
-async def export_run(run_id: str) -> JSONResponse:
-    run = await asyncio.to_thread(database.get_run, run_id)
-    if run is None:
+@app.get("/api/runs/{run_id}/logs")
+async def view_logs(
+    run_id: str,
+    limit: int = Query(2000, ge=1, le=5000),
+) -> dict[str, Any]:
+    if await asyncio.to_thread(database.get_run, run_id) is None:
         raise HTTPException(status_code=404, detail="Run not found.")
-    return JSONResponse(
-        run,
-        headers={
-            "Content-Disposition": f'attachment; filename="plc36-run-{run_id}.json"'
-        },
-    )
+    records = await asyncio.to_thread(runner.read_run_log, run_id, limit)
+    return {"run_id": run_id, "records": records}
 
 
-@app.get("/api/runs/{run_id}/artifacts/{filename}")
-async def download_artifact(run_id: str, filename: str) -> FileResponse:
-    if database.get_run(run_id) is None:
+@app.get("/api/runs/{run_id}/logs/download")
+async def download_logs(run_id: str) -> FileResponse:
+    if await asyncio.to_thread(database.get_run, run_id) is None:
         raise HTTPException(status_code=404, detail="Run not found.")
-    if Path(filename).name != filename:
-        raise HTTPException(status_code=400, detail="Invalid artifact name.")
-    path = runner.output_root / run_id / filename
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Artifact not found.")
-    return FileResponse(path, filename=filename)
+    path = await asyncio.to_thread(runner.ensure_run_log, run_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail="No logs are available for this run.")
+    return FileResponse(path, filename=f"plc36-{run_id}-logs.jsonl")
 
 
 @app.get("/api/runs/{run_id}/events")
@@ -216,20 +205,10 @@ async def run_events(run_id: str) -> StreamingResponse:
         raise HTTPException(status_code=404, detail="Run not found.")
 
     async def stream() -> AsyncIterator[str]:
-        log_path = runner.output_root / run_id / "pytest.log"
-        offset = 0
         last_snapshot = ""
         terminal_reads = 0
 
         while True:
-            if log_path.exists():
-                with log_path.open("r", encoding="utf-8", errors="replace") as file:
-                    file.seek(offset)
-                    chunk = file.read()
-                    offset = file.tell()
-                if chunk:
-                    yield f"event: log\ndata: {json.dumps({'text': chunk})}\n\n"
-
             run = await asyncio.to_thread(database.get_run, run_id)
             if run is None:
                 break
