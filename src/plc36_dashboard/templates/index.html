@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Run and monitor PLC-36 hardware tests.">
   <title>PLC-36 Test Bench</title>
-  <link rel="stylesheet" href="/static/app.css?v=3">
+  <link rel="stylesheet" href="/static/app.css?v=4">
 </head>
 <body>
   <div class="shell">
@@ -21,19 +21,8 @@
     </header>
 
     <main id="top">
-      <section class="command-deck" aria-labelledby="page-title">
-        <div class="command-copy">
-          <p class="eyebrow">HARDWARE-IN-THE-LOOP</p>
-          <h1 id="page-title">Run the bench.<br><span>Read every signal.</span></h1>
-          <p class="lede">Run all PLC-36 tests or choose exactly which hardware path to validate.</p>
-        </div>
-        <div class="primary-action">
-          <button class="run-all" id="run-all" type="button">
-            <span class="play-icon" aria-hidden="true"></span>
-            <span><strong>Run all tests</strong><small id="all-test-count">Collecting tests…</small></span>
-          </button>
-          <p>One protected bench session. No parallel hardware access.</p>
-        </div>
+      <section class="command-deck" aria-label="Dashboard overview">
+        <p class="dashboard-description">Use this dashboard to run and monitor PLC-36 hardware tests with the Raspberry Pi and MegaIND HAT. It checks the variable outputs, analog and digital inputs, internal relays, isolated outputs, and 1-Wire sensors. Progress, measurements, results, and logs are recorded automatically.</p>
       </section>
 
       <section class="bench-strip" aria-label="Bench connections">
@@ -54,8 +43,14 @@
 
       <section class="workspace" aria-labelledby="tests-title">
         <div class="section-heading">
-          <div><p class="eyebrow">TESTS</p><h2 id="tests-title">Choose a hardware path</h2></div>
-          <button class="secondary-button" id="open-picker" type="button">Choose individual tests</button>
+          <p class="eyebrow tests-label" id="tests-title">TESTS</p>
+          <div class="test-actions">
+            <button class="run-all" id="run-all" type="button">
+              <span class="play-icon" aria-hidden="true"></span>
+              <span><strong>Run all tests</strong><small id="all-test-count">Collecting tests…</small></span>
+            </button>
+            <button class="secondary-button" id="open-picker" type="button">Choose individual tests</button>
+          </div>
         </div>
         <div class="test-grid" id="test-grid" aria-live="polite"></div>
       </section>
@@ -148,6 +143,6 @@
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=3" defer></script>
+  <script src="/static/app.js?v=4" defer></script>
 </body>
 </html>
