@@ -90,10 +90,10 @@ def restore_variable_outputs(
     dut: DutRpcClient,
     bench: BenchConfig,
 ) -> Iterator[None]:
-    """Perform one final safety reset after all 0-10 V tests."""
-    # There is no setup reset here. The first four 0% test cases
-    # only read and verify the existing output states.
-    yield
-
-    # Keep one final safety reset after the complete module.
+    """Keep all PLC 0-10 V outputs safe around each test module."""
     _restore_variable_outputs(dut, bench)
+
+    try:
+        yield
+    finally:
+        _restore_variable_outputs(dut, bench)
