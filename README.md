@@ -14,7 +14,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-## Run
+## Run tests from the terminal
 
 ```bash
 source .venv/bin/activate
@@ -24,10 +24,33 @@ pytest tests/0V_10V_outputs/test_variable_outputs.py \
   -k "volts==5"
 ```
 
-Optional DUT console scrape:
+Without a HAT or DUT, hardware tests skip. `tests/4mA_20mA_inputs/` and `tests/rs485/` are skipped placeholders.
+
+## Test dashboard
+
+The responsive dashboard runs on the Raspberry Pi and provides:
+
+- bench and device connectivity status;
+- Run all, test-suite, and individual-test controls;
+- live progress, results, logs, and safe cancellation;
+- historical pass-rate and duration statistics;
+- structured voltage, accuracy, and DS18B20 metrics;
+- per-run JSON, CSV, XML, JSONL, and log downloads.
+
+Start it from the repository root:
 
 ```bash
-pytest --capture-dut-logs --log-to-stdout tests/test_dut_log_capture.py
+source .venv/bin/activate
+plc36-dashboard --host 0.0.0.0 --port 8080
 ```
 
-Without a HAT or DUT, hardware tests skip. `tests/4mA_20mA_inputs/` and `tests/rs485/` are skipped placeholders.
+Open `http://<raspberry-pi-ip>:8080` from a browser on the same network.
+The default PLC IP and MegaIND stack are loaded from `config/bench.yaml`.
+
+Only one hardware run can execute at a time. The lock also protects the bench
+when pytest is started separately from a terminal. The dashboard stops tests
+with `SIGINT` so fixture cleanup can return outputs to their safe states.
+
+Dashboard history is stored in `output/dashboard.sqlite3`. Each run has a
+separate directory under `output/runs/`, so later runs do not overwrite its
+measurements or logs.

@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from plc36_testkit.config import BenchConfig
+from plc36_testkit.dashboard_events import RecordMetric
 from plc36_testkit.hat import HatClient
 from plc36_testkit.logging import OUTPUT_DIR
 from plc36_testkit.rpc import DutRpcClient, DutRpcError
@@ -121,6 +122,7 @@ def test_compare_output_accuracy(
     dut: DutRpcClient,
     hat: HatClient,
     bench: BenchConfig,
+    record_metric: RecordMetric,
 ) -> None:
     measurements: list[dict[str, object]] = []
     summaries: list[dict[str, float | str | int]] = []
@@ -142,6 +144,28 @@ def test_compare_output_accuracy(
                 )
 
                 raw_error = measured_voltage - expected_voltage
+
+                record_metric(
+                    "accuracy_measured_voltage",
+                    measured_voltage,
+                    unit="V",
+                    channel=channel.name,
+                    setpoint_percent=percentage,
+                )
+                record_metric(
+                    "accuracy_raw_error",
+                    raw_error,
+                    unit="V",
+                    channel=channel.name,
+                    setpoint_percent=percentage,
+                )
+                record_metric(
+                    "accuracy_noise",
+                    stdev_voltage,
+                    unit="V",
+                    channel=channel.name,
+                    setpoint_percent=percentage,
+                )
 
                 record: dict[str, object] = {
                     "output": channel.name,
@@ -255,6 +279,25 @@ def test_compare_output_accuracy(
                     "temp_error_full_range_c": score * 18.0,
                     "temp_error_0_50_c": score * 5.0,
                 }
+            )
+
+            record_metric(
+                "raw_mae",
+                raw_mae,
+                unit="V",
+                channel=channel.name,
+            )
+            record_metric(
+                "calibrated_mae",
+                calibrated_mae,
+                unit="V",
+                channel=channel.name,
+            )
+            record_metric(
+                "calibrated_max_error",
+                calibrated_max_error,
+                unit="V",
+                channel=channel.name,
             )
 
             print(

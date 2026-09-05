@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from typing import TypeVar
 
 import pytest
 
 from plc36_testkit.config import BenchConfig
 from plc36_testkit.conversions import percentage_to_volts
+from plc36_testkit.dashboard_events import RecordMetric
 from plc36_testkit.hat import HatClient
 from plc36_testkit.mapping import OUTPUTS_0_10V
 from plc36_testkit.rpc import DutRpcClient, DutRpcError
@@ -204,6 +205,7 @@ def test_variable_output_matches_hat_uin(
     channel,
     hat_in: int,
     percentage: float,
+    record_metric: RecordMetric,
 ) -> None:
     """Verify that the PLC output matches the HAT analog input."""
     expected_volts = percentage_to_volts(percentage)
@@ -211,6 +213,21 @@ def test_variable_output_matches_hat_uin(
     if percentage == SAFE_OUTPUT_PERCENTAGE:
         reported_percentage = _get_output_percentage(dut, channel)
         measured_volts = hat.read_uin(hat_in)
+
+        record_metric(
+            "measured_voltage",
+            measured_volts,
+            unit="V",
+            channel=channel.name,
+            setpoint_percent=percentage,
+        )
+        record_metric(
+            "voltage_error",
+            measured_volts - expected_volts,
+            unit="V",
+            channel=channel.name,
+            setpoint_percent=percentage,
+        )
 
         assert reported_percentage == pytest.approx(
             SAFE_OUTPUT_PERCENTAGE,
@@ -251,6 +268,21 @@ def test_variable_output_matches_hat_uin(
 
         measured_volts = hat.read_uin(hat_in)
         reported_percentage = _get_output_percentage(dut, channel)
+
+        record_metric(
+            "measured_voltage",
+            measured_volts,
+            unit="V",
+            channel=channel.name,
+            setpoint_percent=percentage,
+        )
+        record_metric(
+            "voltage_error",
+            measured_volts - expected_volts,
+            unit="V",
+            channel=channel.name,
+            setpoint_percent=percentage,
+        )
 
 
         assert measured_volts == pytest.approx(

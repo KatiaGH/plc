@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from collections import deque
 from pathlib import Path
 from typing import Deque
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-OUTPUT_DIR = REPO_ROOT / "output"
+OUTPUT_DIR = Path(os.getenv("PLC36_OUTPUT_DIR", REPO_ROOT / "output"))
 _STEP_BUFFER: Deque[str] = deque(maxlen=200)
 
 

@@ -240,6 +240,7 @@ import time
 import pytest
 
 from plc36_testkit.hat import HatClient
+from plc36_testkit.dashboard_events import RecordMetric
 
 
 HAT_UIN = 4
@@ -378,6 +379,7 @@ def _capture_sensor_samples(
 def test_onewire_sensor_over_o4(
     hat: HatClient,
     sensor_number: int,
+    record_metric: RecordMetric,
 ) -> None:
     """Capture and validate one DS18B20 through PLC O4 and HAT UIN4."""
     temperatures, _ = _capture_sensor_samples(
@@ -387,6 +389,19 @@ def test_onewire_sensor_over_o4(
 
     mean_temperature = statistics.mean(temperatures)
     spread = max(temperatures) - min(temperatures)
+
+    record_metric(
+        "temperature_mean",
+        mean_temperature,
+        unit="°C",
+        sensor=sensor_number,
+    )
+    record_metric(
+        "temperature_spread",
+        spread,
+        unit="°C",
+        sensor=sensor_number,
+    )
 
     print(f"Sensor {sensor_number}: {temperatures}")
     print(f"Sensor {sensor_number} mean: {mean_temperature:.2f} C")
