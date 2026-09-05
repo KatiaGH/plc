@@ -72,8 +72,6 @@ function setControlsDisabled(disabled) {
 async function loadCatalog() {
   const catalog = await api("/api/catalog");
   state.catalog = catalog;
-  const availableTests = catalog.tests.length;
-  $("#all-test-count").textContent = `${availableTests} collected test${availableTests === 1 ? "" : "s"}`;
   renderTestCards();
   renderTestPicker();
   if (catalog.collection_error) toast(`Test collection warning: ${catalog.collection_error}`, true);
@@ -84,10 +82,12 @@ function renderTestCards() {
     <article class="test-card" data-accent="${escapeHtml(category.accent)}">
       <div class="test-card-top">
         <span class="test-card-index">${String(index + 1).padStart(2, "0")}</span>
-        <span class="test-card-count">${category.available ? `${category.test_count} tests` : "planned"}</span>
+        <span class="test-card-count">${category.available ? `${category.test_count} test${category.test_count === 1 ? "" : "s"}` : "planned"}</span>
       </div>
-      <h3>${escapeHtml(category.name)}</h3>
-      <p>${escapeHtml(category.description)}</p>
+      <div class="test-card-title">
+        <h3>${escapeHtml(category.name)}</h3>
+        <button class="test-help" type="button" aria-label="About ${escapeHtml(category.name)}: ${escapeHtml(category.description)}" data-tooltip="${escapeHtml(category.description)}">?</button>
+      </div>
       <button type="button" data-category="${escapeHtml(category.id)}" data-available="${category.available}">
         ${category.available ? "Run tests →" : "Not implemented"}
       </button>
@@ -141,9 +141,15 @@ async function loadBench() {
     state.benchReady = reserved ? Boolean(bench.active_run_id) : Boolean(bench.ready);
     const pill = $("#bench-pill");
     const dot = pill.querySelector(".status-dot");
+    const devicesInActiveRun = Boolean(reserved && bench.active_run_id);
+    const dutActive = devicesInActiveRun || Boolean(bench.dut.online);
+    const hatActive = devicesInActiveRun || Boolean(bench.hat.online);
     dot.className = `status-dot ${reserved ? "busy" : bench.ready ? "online" : "offline"}`;
+    $("#dut-light").className = `device-status-light ${dutActive ? "online" : "offline"}`;
+    $("#hat-light").className = `device-status-light ${hatActive ? "online" : "offline"}`;
     pill.querySelector("span:last-child").textContent = reserved ? "Bench reserved" : bench.ready ? "Bench ready" : "Bench unavailable";
-    $("#dut-state").textContent = reserved ? "Reserved by test run" : bench.dut.online ? (bench.dut.state || "Online") : "Offline";
+    const dutState = bench.dut.state || "Online";
+    $("#dut-state").textContent = reserved ? "Reserved by test run" : bench.dut.online ? `${dutState.charAt(0).toUpperCase()}${dutState.slice(1)}` : "Offline";
     $("#dut-detail").textContent = `PLC ${bench.dut.ip}`;
     $("#hat-state").textContent = reserved ? "Reserved by test run" : bench.hat.online ? "Connected" : "Offline";
     $("#hat-detail").textContent = bench.hat.firmware ? `Stack ${bench.hat.stack} · FW ${bench.hat.firmware}` : `Stack ${bench.hat.stack}`;
@@ -152,6 +158,8 @@ async function loadBench() {
     setControlsDisabled(reserved || !bench.ready);
   } catch (error) {
     state.benchReady = false;
+    $("#dut-light").className = "device-status-light offline";
+    $("#hat-light").className = "device-status-light offline";
     $("#bench-pill").querySelector("span:last-child").textContent = "Status unavailable";
     setControlsDisabled(true);
     toast(error.message, true);
