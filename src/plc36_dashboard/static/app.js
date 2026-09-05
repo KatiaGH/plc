@@ -80,13 +80,13 @@ async function loadCatalog() {
 function renderTestCards() {
   $("#test-grid").innerHTML = state.catalog.categories.map((category, index) => `
     <article class="test-card" data-accent="${escapeHtml(category.accent)}">
-      <div class="test-card-top">
+      <div class="test-card-heading">
         <span class="test-card-index">${String(index + 1).padStart(2, "0")}</span>
+        <div class="test-card-title">
+          <h3>${escapeHtml(category.name)}</h3>
+          <button class="test-help" type="button" aria-label="About ${escapeHtml(category.name)}: ${escapeHtml(category.description)}" data-tooltip="${escapeHtml(category.description)}">?</button>
+        </div>
         <span class="test-card-count">${category.available ? `${category.test_count} test${category.test_count === 1 ? "" : "s"}` : "planned"}</span>
-      </div>
-      <div class="test-card-title">
-        <h3>${escapeHtml(category.name)}</h3>
-        <button class="test-help" type="button" aria-label="About ${escapeHtml(category.name)}: ${escapeHtml(category.description)}" data-tooltip="${escapeHtml(category.description)}">?</button>
       </div>
       <button type="button" data-category="${escapeHtml(category.id)}" data-available="${category.available}">
         ${category.available ? "Run tests →" : "Not implemented"}

@@ -71,7 +71,7 @@ h1, h2, h3, p { margin-top: 0; }
 .primary-button:disabled { opacity: .4; cursor: not-allowed; }
 .text-button { border: 0; background: none; color: var(--cyan); cursor: pointer; padding: 8px; font-size: .85rem; }
 .test-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-.test-card { border: 1px solid var(--line); background: linear-gradient(145deg, rgba(17,31,41,.98), rgba(10,20,27,.98)); border-radius: var(--radius); padding: 18px; min-height: 155px; display: flex; flex-direction: column; position: relative; }
+.test-card { border: 1px solid var(--line); background: linear-gradient(145deg, rgba(17,31,41,.98), rgba(10,20,27,.98)); border-radius: var(--radius); padding: 14px 16px; min-height: 106px; display: flex; flex-direction: column; position: relative; }
 .test-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--accent, var(--cyan)); }
 .test-card[data-accent="violet"] { --accent: var(--violet); }
 .test-card[data-accent="amber"] { --accent: var(--amber); }
@@ -79,12 +79,12 @@ h1, h2, h3, p { margin-top: 0; }
 .test-card[data-accent="orange"] { --accent: #ff9563; }
 .test-card[data-accent="blue"] { --accent: #61a8ff; }
 .test-card[data-accent="slate"] { --accent: #52646e; opacity: .55; }
-.test-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.test-card-heading { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; }
 .test-card-index { color: var(--accent); font: 700 .78rem ui-monospace, monospace; }
 .test-card-count { font-size: .72rem; color: var(--muted); border: 1px solid var(--line); padding: 3px 7px; border-radius: 999px; }
-.test-card-title { display: flex; align-items: center; gap: 8px; margin: 16px 0 18px; }
+.test-card-title { min-width: 0; display: flex; align-items: center; gap: 7px; }
 .test-card h3 { margin: 0; font-size: 1rem; }
-.test-card button[data-category] { margin-top: auto; align-self: flex-start; border: 0; padding: 0; background: none; color: var(--accent); font-weight: 800; cursor: pointer; }
+.test-card button[data-category] { margin-top: 15px; align-self: flex-start; border: 0; padding: 0; background: none; color: var(--accent); font-weight: 800; cursor: pointer; }
 .test-card button[data-category]:disabled { color: var(--muted); cursor: not-allowed; }
 .test-help { position: relative; flex: 0 0 auto; width: 21px; height: 21px; padding: 0; border: 1px solid var(--line-bright); border-radius: 50%; background: transparent; color: var(--muted); font: 700 .72rem/1 ui-monospace, monospace; cursor: help; }
 .test-help::after { content: attr(data-tooltip); position: absolute; z-index: 4; left: 50%; bottom: calc(100% + 9px); width: 230px; padding: 9px 11px; border: 1px solid var(--line-bright); border-radius: 8px; background: #14232c; color: var(--text); box-shadow: var(--shadow); font: 400 .76rem/1.45 Inter, ui-sans-serif, system-ui, sans-serif; text-align: left; transform: translate(-50%, 4px); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .15s ease, transform .15s ease, visibility .15s ease; }
