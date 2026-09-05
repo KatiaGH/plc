@@ -240,7 +240,8 @@ async function startRun(selectionType, selection) {
 function connectRun(runId) {
   state.activeRunId = runId;
   $("#active-panel").classList.remove("hidden");
-  $("#run-state-label").innerHTML = '<span class="pulse-dot"></span> LIVE RUN';
+  const runStateLabel = $("#run-state-label");
+  if (runStateLabel) runStateLabel.innerHTML = '<span class="pulse-dot"></span> LIVE RUN';
   $("#active-title").textContent = "Test run in progress";
   $("#current-test").textContent = "Collecting selected tests…";
   $("#stop-run").disabled = true;
@@ -256,7 +257,8 @@ function connectRun(runId) {
     source.close();
     state.activeRunId = null;
     state.eventSource = null;
-    $("#run-state-label").textContent = "RUN COMPLETE";
+    const completedStateLabel = $("#run-state-label");
+    if (completedStateLabel) completedStateLabel.textContent = "RUN COMPLETE";
     $("#active-title").textContent = run.status === "passed" ? "Run completed successfully" : `Run ${run.status}`;
     $("#stop-run").disabled = true;
     await Promise.all([loadBench(), loadSummary(), loadRuns()]);

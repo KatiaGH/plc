@@ -70,6 +70,16 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def disable_dashboard_caching(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 app.mount("/static", StaticFiles(directory=PACKAGE_ROOT / "static"), name="static")
 
 
