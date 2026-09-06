@@ -46,3 +46,14 @@ def test_database_records_results_and_metrics(tmp_path: Path) -> None:
     summary = database.summary()
     assert summary["total_runs"] == 1
     assert summary["pass_rate"] == 100.0
+    assert summary["completed_tests"] == 1
+    assert summary["passed_percent"] == 100.0
+    assert summary["failed_percent"] == 0.0
+    assert summary["skipped_percent"] == 0.0
+    assert summary["total_execution_time_s"] >= 0
+
+    analytics = database.test_case_history("week")
+    assert analytics["period"] == "week"
+    assert analytics["daily"][-1]["passed"] == 1
+    assert analytics["daily"][-1]["failed"] == 0
+    assert analytics["daily"][-1]["skipped"] == 0

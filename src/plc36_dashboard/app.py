@@ -148,6 +148,13 @@ async def summary() -> dict[str, Any]:
     return await asyncio.to_thread(database.summary)
 
 
+@app.get("/api/analytics")
+async def analytics(
+    period: Literal["week", "month", "year", "max"] = Query("week"),
+) -> dict[str, Any]:
+    return await asyncio.to_thread(database.test_case_history, period)
+
+
 @app.get("/api/runs")
 async def runs(limit: int = Query(30, ge=1, le=200)) -> list[dict[str, Any]]:
     return await asyncio.to_thread(database.list_runs, limit)

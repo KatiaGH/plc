@@ -7,6 +7,7 @@ const state = {
   showAllTests: false,
   showAllRuns: false,
   runs: [],
+  analyticsPeriod: "week",
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -56,10 +57,19 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
-function formatShortDate(value) {
-  if (!value) return "—";
-  const date = new Date(value);
-  return `${date.getDate()}.${String(date.getMonth() + 1).padStart(2, "0")}`;
+function formatTotalDuration(value) {
+  let seconds = Math.max(0, Math.round(Number(value) || 0));
+  const days = Math.floor(seconds / 86400);
+  seconds %= 86400;
+  const hours = Math.floor(seconds / 3600);
+  seconds %= 3600;
+  const minutes = Math.floor(seconds / 60);
+  seconds %= 60;
+  return [days && `${days}d`, hours && `${hours}h`, minutes && `${minutes}m`, `${seconds}s`].filter(Boolean).join(" ");
+}
+
+function formatPercent(value) {
+  return `${Math.round((Number(value) || 0) * 10) / 10}%`;
 }
 
 function shortSelection(run) {
@@ -174,11 +184,11 @@ async function loadBench() {
 
 async function loadSummary() {
   const summary = await api("/api/summary");
-  $("#pass-rate").textContent = summary.passed_tests + summary.failed_tests ? `${summary.pass_rate.toFixed(1)}%` : "—";
-  $("#total-runs").textContent = summary.total_runs;
-  $("#failed-runs").textContent = summary.failed_runs;
-  $("#average-duration").textContent = summary.total_runs ? formatDuration(summary.average_duration_s) : "—";
-  renderRunChart(summary.recent_runs);
+  $("#completed-tests").textContent = summary.completed_tests;
+  $("#total-execution-time").textContent = formatTotalDuration(summary.total_execution_time_s);
+  $("#passed-percent").textContent = formatPercent(summary.passed_percent);
+  $("#failed-percent").textContent = formatPercent(summary.failed_percent);
+  $("#skipped-percent").textContent = formatPercent(summary.skipped_percent);
   renderHardwareMetrics(summary.latest_metrics || []);
 }
 
@@ -198,26 +208,102 @@ function renderHardwareMetrics(metrics) {
   }).join("") : '<span class="empty-metric">Measurements will appear after an accuracy or 1-Wire run.</span>';
 }
 
-function renderRunChart(runs) {
-  const ordered = [...runs].reverse();
-  $("#run-chart").innerHTML = ordered.length ? ordered.map((run) => {
-    const total = run.passed + run.failed + run.skipped;
-    const passHeight = total ? (run.passed / total) * 100 : 0;
-    const failHeight = total ? (run.failed / total) * 100 : 0;
-    const skipHeight = total ? (run.skipped / total) * 100 : 0;
-    const title = `${run.passed} passed · ${run.failed} failed · ${run.skipped} skipped · ${formatDate(run.created_at)}`;
-    return `<button class="run-chart-button" type="button" data-run-id="${escapeHtml(run.id)}" aria-label="${escapeHtml(title)}">
-      <span class="run-stack ${escapeHtml(run.status)}" title="${escapeHtml(title)}">
-        <span class="run-segment pass" style="height:${passHeight}%"></span>
-        <span class="run-segment fail" style="height:${failHeight}%"></span>
-        <span class="run-segment skip" style="height:${skipHeight}%"></span>
-      </span>
-      <span class="run-date">${escapeHtml(formatShortDate(run.created_at))}</span>
-    </button>`;
-  }).join("") : '<span class="empty-cell">Run results will appear here.</span>';
-  document.querySelectorAll(".run-chart-button").forEach((button) => {
-    button.addEventListener("click", () => showRunDetail(button.dataset.runId));
-  });
+function isoDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function completeDailySeries(rows, period) {
+  const byDate = new Map(rows.map((row) => [row.date, row]));
+  const end = new Date();
+  end.setUTCHours(0, 0, 0, 0);
+  const days = { week: 7, month: 30, year: 365 };
+  let start;
+  if (period === "max" && rows.length) start = new Date(`${rows[0].date}T00:00:00Z`);
+  else {
+    start = new Date(end);
+    start.setUTCDate(start.getUTCDate() - ((days[period] || 7) - 1));
+  }
+
+  const series = [];
+  for (const day = new Date(start); day <= end; day.setUTCDate(day.getUTCDate() + 1)) {
+    const date = isoDate(day);
+    const values = byDate.get(date) || {};
+    series.push({
+      date,
+      passed: Number(values.passed) || 0,
+      failed: Number(values.failed) || 0,
+      skipped: Number(values.skipped) || 0,
+    });
+  }
+  return series;
+}
+
+function chartDateLabel(value) {
+  return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function renderDailyChart(series) {
+  const width = 760;
+  const height = 260;
+  const left = 42;
+  const right = 18;
+  const top = 18;
+  const bottom = 42;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const largest = Math.max(0, ...series.flatMap((day) => [day.passed, day.failed, day.skipped]));
+  const maxValue = Math.max(5, Math.ceil(largest / 5) * 5);
+  const x = (index) => left + (series.length === 1 ? plotWidth / 2 : (index / (series.length - 1)) * plotWidth);
+  const y = (value) => top + plotHeight - (value / maxValue) * plotHeight;
+  const pathFor = (key) => series.map((day, index) => `${index ? "L" : "M"}${x(index).toFixed(2)},${y(day[key]).toFixed(2)}`).join(" ");
+  const tickCount = 5;
+  const grid = Array.from({ length: tickCount + 1 }, (_, index) => {
+    const value = (maxValue / tickCount) * index;
+    const position = y(value);
+    return `<line x1="${left}" y1="${position}" x2="${width - right}" y2="${position}" class="chart-grid-line"></line><text x="${left - 9}" y="${position + 4}" class="chart-axis-label" text-anchor="end">${Math.round(value)}</text>`;
+  }).join("");
+  const labelCount = Math.min(7, series.length);
+  const labelIndexes = [...new Set(Array.from({ length: labelCount }, (_, index) => Math.round(index * (series.length - 1) / Math.max(1, labelCount - 1))))];
+  const labels = labelIndexes.map((index) => `<text x="${x(index)}" y="${height - 10}" class="chart-axis-label" text-anchor="middle">${escapeHtml(chartDateLabel(series[index].date))}</text>`).join("");
+  const points = series.length <= 31 ? ["passed", "failed", "skipped"].map((key) => series.map((day, index) => `<circle cx="${x(index)}" cy="${y(day[key])}" r="3" class="chart-point ${key}"><title>${escapeHtml(`${chartDateLabel(day.date)}: ${day[key]} ${key}`)}</title></circle>`).join("")).join("") : "";
+
+  $("#daily-chart").innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily passed, failed, and skipped test cases">
+    ${grid}${labels}
+    <path d="${pathFor("passed")}" class="chart-line passed"></path>
+    <path d="${pathFor("failed")}" class="chart-line failed"></path>
+    <path d="${pathFor("skipped")}" class="chart-line skipped"></path>
+    ${points}
+  </svg>`;
+}
+
+function renderStatusSummary(series, period) {
+  const statuses = [
+    { key: "passed", label: "Passed" },
+    { key: "failed", label: "Failed" },
+    { key: "skipped", label: "Skipped" },
+  ];
+  const totals = Object.fromEntries(statuses.map(({ key }) => [key, series.reduce((sum, day) => sum + day[key], 0)]));
+  const total = statuses.reduce((sum, { key }) => sum + totals[key], 0);
+  let offset = 0;
+  const segments = statuses.map(({ key, label }) => {
+    const percent = total ? (totals[key] / total) * 100 : 0;
+    const circle = percent ? `<circle class="donut-segment ${key}" cx="60" cy="60" r="46" pathLength="100" stroke-dasharray="${percent} ${100 - percent}" stroke-dashoffset="${-offset}"><title>${label}: ${totals[key]} (${formatPercent(percent)})</title></circle>` : "";
+    offset += percent;
+    return circle;
+  }).join("");
+  $("#status-donut").innerHTML = `<svg viewBox="0 0 120 120" role="img" aria-label="${total} test cases by status"><circle class="donut-track" cx="60" cy="60" r="46"></circle>${segments}<text x="60" y="57" class="donut-total" text-anchor="middle">${total}</text><text x="60" y="72" class="donut-caption" text-anchor="middle">test cases</text></svg>`;
+  $("#status-breakdown").innerHTML = statuses.map(({ key, label }) => {
+    const percent = total ? (totals[key] / total) * 100 : 0;
+    return `<div class="status-row"><span class="status-name ${key}">${label}</span><strong>${formatPercent(percent)}</strong><span class="status-count">${totals[key]}</span></div>`;
+  }).join("");
+  $("#status-period-label").textContent = { week: "Latest 7 days", month: "Latest 30 days", year: "Latest 365 days", max: "All recorded history" }[period];
+}
+
+async function loadAnalytics() {
+  const analytics = await api(`/api/analytics?period=${encodeURIComponent(state.analyticsPeriod)}`);
+  const series = completeDailySeries(analytics.daily || [], analytics.period);
+  renderDailyChart(series);
+  renderStatusSummary(series, analytics.period);
 }
 
 function renderRuns() {
@@ -287,7 +373,7 @@ function connectRun(runId) {
     if (completedStateLabel) completedStateLabel.textContent = "RUN COMPLETE";
     $("#active-title").textContent = run.status === "passed" ? "Run completed successfully" : `Run ${run.status}`;
     $("#stop-run").disabled = true;
-    await Promise.all([loadBench(), loadSummary(), loadRuns()]);
+    await Promise.all([loadBench(), loadSummary(), loadRuns(), loadAnalytics()]);
     const message = run.status === "passed" ? "All selected tests passed." : run.status === "skipped" ? "Tests were skipped because the bench was unavailable." : `Test run ${run.status}.`;
     toast(message, !["passed", "skipped"].includes(run.status));
   });
@@ -361,7 +447,7 @@ async function showRunDetail(runId) {
 async function initialize() {
   try {
     await loadCatalog();
-    await Promise.all([loadBench(), loadSummary(), loadRuns()]);
+    await Promise.all([loadBench(), loadSummary(), loadRuns(), loadAnalytics()]);
   } catch (error) { toast(error.message, true); }
 }
 
@@ -373,8 +459,9 @@ $("#clear-tests").addEventListener("click", () => { state.selectedTests.clear();
 $("#run-selected").addEventListener("click", () => startRun("tests", [...state.selectedTests]));
 $("#stop-run").addEventListener("click", stopActiveRun);
 $("#refresh-bench").addEventListener("click", loadBench);
-$("#refresh-runs").addEventListener("click", async () => { await Promise.all([loadSummary(), loadRuns()]); toast("Run history refreshed."); });
+$("#refresh-runs").addEventListener("click", async () => { await Promise.all([loadSummary(), loadRuns(), loadAnalytics()]); toast("Run history refreshed."); });
 $("#toggle-runs").addEventListener("click", () => { state.showAllRuns = !state.showAllRuns; renderRuns(); });
+$("#analytics-period").addEventListener("change", async (event) => { state.analyticsPeriod = event.target.value; await loadAnalytics(); });
 $("#close-detail").addEventListener("click", () => $("#run-detail").close());
 
 initialize();

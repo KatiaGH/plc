@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -343,6 +343,51 @@ class DashboardDatabase:
             ).fetchall()
         return [self._row(row) or {} for row in rows]
 
+    def test_case_history(self, period: str = "week") -> dict[str, Any]:
+        period_days = {"week": 7, "month": 30, "year": 365}
+        if period != "max" and period not in period_days:
+            raise ValueError(f"Unsupported analytics period: {period}")
+
+        where = ""
+        parameters: tuple[str, ...] = ()
+        if period != "max":
+            start_date = (
+                datetime.now(timezone.utc).date()
+                - timedelta(days=period_days[period] - 1)
+            ).isoformat()
+            where = "WHERE substr(r.created_at, 1, 10) >= ?"
+            parameters = (start_date,)
+
+        with self._connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT
+                    substr(r.created_at, 1, 10) AS date,
+                    SUM(tr.outcome = 'passed') AS passed,
+                    SUM(tr.outcome = 'failed') AS failed,
+                    SUM(tr.outcome = 'skipped') AS skipped
+                FROM runs AS r
+                JOIN test_results AS tr ON tr.run_id = r.id
+                {where}
+                GROUP BY substr(r.created_at, 1, 10)
+                ORDER BY date
+                """,
+                parameters,
+            ).fetchall()
+
+        return {
+            "period": period,
+            "daily": [
+                {
+                    "date": str(row["date"]),
+                    "passed": int(row["passed"] or 0),
+                    "failed": int(row["failed"] or 0),
+                    "skipped": int(row["skipped"] or 0),
+                }
+                for row in rows
+            ],
+        }
+
     def summary(self) -> dict[str, Any]:
         with self._connect() as db:
             totals = db.execute(
@@ -352,7 +397,8 @@ class DashboardDatabase:
                     SUM(status = 'passed') AS passed_runs,
                     SUM(status = 'failed') AS failed_runs,
                     SUM(status = 'skipped') AS skipped_runs,
-                    AVG(CASE WHEN duration_s IS NOT NULL THEN duration_s END) AS average_duration_s
+                    AVG(CASE WHEN duration_s IS NOT NULL THEN duration_s END) AS average_duration_s,
+                    SUM(CASE WHEN duration_s IS NOT NULL THEN duration_s ELSE 0 END) AS total_execution_time_s
                 FROM runs
                 """
             ).fetchone()
@@ -410,6 +456,8 @@ class DashboardDatabase:
 
         passed_tests = int(test_totals["passed_tests"] or 0)
         failed_tests = int(test_totals["failed_tests"] or 0)
+        skipped_tests = int(test_totals["skipped_tests"] or 0)
+        completed_tests = passed_tests + failed_tests + skipped_tests
         decided = passed_tests + failed_tests
         return {
             "total_runs": int(totals["total_runs"] or 0),
@@ -417,9 +465,14 @@ class DashboardDatabase:
             "failed_runs": int(totals["failed_runs"] or 0),
             "skipped_runs": int(totals["skipped_runs"] or 0),
             "average_duration_s": float(totals["average_duration_s"] or 0),
+            "total_execution_time_s": float(totals["total_execution_time_s"] or 0),
+            "completed_tests": completed_tests,
             "passed_tests": passed_tests,
             "failed_tests": failed_tests,
-            "skipped_tests": int(test_totals["skipped_tests"] or 0),
+            "skipped_tests": skipped_tests,
+            "passed_percent": (passed_tests / completed_tests * 100) if completed_tests else 0,
+            "failed_percent": (failed_tests / completed_tests * 100) if completed_tests else 0,
+            "skipped_percent": (skipped_tests / completed_tests * 100) if completed_tests else 0,
             "pass_rate": (passed_tests / decided * 100) if decided else 0,
             "recent_runs": recent,
             "top_failures": failures,

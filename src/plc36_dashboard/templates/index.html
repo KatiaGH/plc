@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Run and monitor PLC-36 hardware tests.">
   <title>PLC-36 Test Bench</title>
-  <link rel="stylesheet" href="/static/app.css?v=7">
+  <link rel="stylesheet" href="/static/app.css?v=8">
 </head>
 <body>
   <div class="shell">
@@ -75,26 +75,41 @@
               <p class="eyebrow" id="metrics-title">TEST HEALTH</p>
             </div>
             <div class="metric-grid">
-              <article class="metric-card primary">
-                <div class="metric-label"><small>PASS RATE</small><button class="help-button metric-help" type="button" aria-label="Pass rate calculation" data-tooltip="Passed tests divided by passed plus failed tests, multiplied by 100. Skipped tests are excluded.">?</button></div>
-                <strong id="pass-rate">—</strong>
+              <article class="metric-card" data-tone="neutral">
+                <div class="metric-label"><small>TEST CASES COMPLETED</small><button class="help-button metric-help" type="button" aria-label="Test cases completed calculation" data-tooltip="Passed, failed, and skipped test cases recorded across all completed runs.">?</button></div>
+                <strong id="completed-tests">0</strong>
               </article>
-              <article class="metric-card">
-                <div class="metric-label"><small>TOTAL RUNS</small><button class="help-button metric-help" type="button" aria-label="Total runs calculation" data-tooltip="The total number of test runs recorded by the dashboard.">?</button></div>
-                <strong id="total-runs">0</strong>
+              <article class="metric-card" data-tone="time">
+                <div class="metric-label"><small>TOTAL EXECUTION TIME</small><button class="help-button metric-help" type="button" aria-label="Total execution time calculation" data-tooltip="The sum of the measured duration of every recorded test run.">?</button></div>
+                <strong id="total-execution-time">0s</strong>
               </article>
-              <article class="metric-card">
-                <div class="metric-label"><small>FAILED RUNS</small><button class="help-button metric-help" type="button" aria-label="Failed runs calculation" data-tooltip="The number of recorded runs whose final status is failed.">?</button></div>
-                <strong id="failed-runs">0</strong>
+              <article class="metric-card" data-tone="passed">
+                <div class="metric-label"><small>PASSED</small><button class="help-button metric-help" type="button" aria-label="Passed percentage calculation" data-tooltip="Passed test cases divided by all completed test cases, multiplied by 100.">?</button></div>
+                <strong id="passed-percent">0%</strong>
               </article>
-              <article class="metric-card">
-                <div class="metric-label"><small>AVERAGE DURATION</small><button class="help-button metric-help" type="button" aria-label="Average duration calculation" data-tooltip="The mean elapsed time of recorded runs that have a measured duration.">?</button></div>
-                <strong id="average-duration">—</strong>
+              <article class="metric-card" data-tone="failed">
+                <div class="metric-label"><small>FAILED</small><button class="help-button metric-help" type="button" aria-label="Failed percentage calculation" data-tooltip="Failed test cases divided by all completed test cases, multiplied by 100.">?</button></div>
+                <strong id="failed-percent">0%</strong>
+              </article>
+              <article class="metric-card" data-tone="skipped">
+                <div class="metric-label"><small>SKIPPED</small><button class="help-button metric-help" type="button" aria-label="Skipped percentage calculation" data-tooltip="Skipped test cases divided by all completed test cases, multiplied by 100.">?</button></div>
+                <strong id="skipped-percent">0%</strong>
               </article>
             </div>
-            <div class="trend-card">
-              <div><h3>Recent run health</h3><p>Latest 12 runs · select a date for details and logs</p></div>
-              <div class="run-chart" id="run-chart" aria-label="Recent run results"></div>
+            <div class="analytics-grid">
+              <article class="analytics-card daily-chart-card">
+                <header class="analytics-header">
+                  <div><h3>Test cases per day</h3><p>Daily passed, failed, and skipped results</p></div>
+                  <label class="period-control"><span>Period</span><select id="analytics-period"><option value="week" selected>Week</option><option value="month">Month</option><option value="year">Year</option><option value="max">Max</option></select></label>
+                </header>
+                <div class="line-chart" id="daily-chart" aria-live="polite"></div>
+                <div class="chart-legend" aria-label="Chart legend"><span class="pass">Passed</span><span class="fail">Failed</span><span class="skip">Skipped</span></div>
+              </article>
+              <article class="analytics-card status-chart-card">
+                <header class="analytics-header"><div><h3>Test case results by status</h3><p id="status-period-label">Latest 7 days</p></div></header>
+                <div class="status-donut" id="status-donut" aria-live="polite"></div>
+                <div class="status-breakdown" id="status-breakdown"></div>
+              </article>
             </div>
             <div class="hardware-metrics-card">
               <div class="card-title-with-help">
@@ -160,6 +175,6 @@
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=7" defer></script>
+  <script src="/static/app.js?v=8" defer></script>
 </body>
 </html>
