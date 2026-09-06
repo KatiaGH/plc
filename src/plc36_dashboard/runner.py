@@ -353,24 +353,31 @@ class TestRunner:
                     )
         return jsonl_path
 
-    def read_run_log(self, run_id: str, limit: int = 2000) -> list[dict[str, str]]:
-        path = self.ensure_run_log(run_id)
+    def run_log_path(self, run_id: str, source: str = "pytest") -> Path | None:
+        if source == "pytest":
+            return self.ensure_run_log(run_id)
+        if source == "plc":
+            path = self.output_root / run_id / "rpc_responses.jsonl"
+            return path if path.is_file() else None
+        raise ValueError(f"Unsupported log source: {source}")
+
+    def read_run_log(
+        self,
+        run_id: str,
+        limit: int = 2000,
+        source: str = "pytest",
+    ) -> list[dict[str, Any]]:
+        path = self.run_log_path(run_id, source)
         if path is None:
             return []
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        records: list[dict[str, str]] = []
+        records: list[dict[str, Any]] = []
         for line in lines[-max(1, min(limit, 5000)) :]:
             try:
                 record = json.loads(line)
             except json.JSONDecodeError:
-                record = {"timestamp": "", "source": "pytest", "message": line}
-            records.append(
-                {
-                    "timestamp": str(record.get("timestamp", "")),
-                    "source": str(record.get("source", "pytest")),
-                    "message": str(record.get("message", "")),
-                }
-            )
+                record = {"timestamp": "", "source": source, "message": line}
+            records.append(dict(record))
         return records
 
     def _handle_event(self, run_id: str, raw_event: str) -> None:

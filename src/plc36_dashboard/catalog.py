@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
@@ -94,6 +95,39 @@ def category_for_nodeid(nodeid: str) -> TestCategory | None:
     )
 
 
+def friendly_test_name(nodeid: str) -> str:
+    """Convert a pytest node ID into a concise bench-facing test name."""
+    raw_name = nodeid.rsplit("::", 1)[-1]
+    match = re.fullmatch(r"([^[]+)(?:\[(.+)\])?", raw_name)
+    base = match.group(1) if match else raw_name
+    parameter = match.group(2) if match else None
+
+    if base == "test_variable_output_matches_hat_uin" and parameter:
+        percentage, output = parameter.split("-", 1)
+        return f"{output} output at {percentage}%"
+    if base == "test_compare_output_accuracy":
+        return "0–10 V output accuracy"
+    if base == "test_onewire_sensor_over_o4" and parameter:
+        sensor = parameter.removeprefix("sensor-")
+        return f"1-Wire sensor {sensor} over O4"
+    if base == "test_nc_path_when_relay_idle" and parameter:
+        return f"Relay {parameter} NC path (idle)"
+    if base == "test_no_path_when_relay_energized" and parameter:
+        return f"Relay {parameter} NO path (energized)"
+    if base == "test_direct_isolated_output_breaks_hat_opto" and parameter:
+        return f"{parameter} isolated output"
+    if base == "test_shared_isolated_output_via_hat_od" and parameter:
+        outputs = " and ".join(parameter.split("_"))
+        return f"{outputs} shared isolated output"
+    if base == "test_ii1_ii8_change_together":
+        return "Isolated inputs II1–II8"
+
+    words = base.removeprefix("test_").replace("_", " ")
+    if parameter:
+        words = f"{words} ({parameter.replace('_', ' ')})"
+    return words[:1].upper() + words[1:]
+
+
 def collect_tests(repo_root: Path) -> tuple[list[dict[str, Any]], str | None]:
     """Collect exact pytest node IDs without touching hardware fixtures."""
     targets = [category.target for category in available_categories()]
@@ -129,11 +163,10 @@ def collect_tests(repo_root: Path) -> tuple[list[dict[str, Any]], str | None]:
         if category is None:
             continue
         seen.add(nodeid)
-        short_name = nodeid.split("::", 1)[1]
         tests.append(
             {
                 "nodeid": nodeid,
-                "name": short_name,
+                "name": friendly_test_name(nodeid),
                 "category_id": category.id,
                 "category_name": category.name,
             }

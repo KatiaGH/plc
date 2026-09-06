@@ -21,7 +21,7 @@ from plc36_testkit.bench_lock import bench_is_available
 from plc36_testkit.config import load_bench
 from plc36_testkit.hat import HatClient
 
-from plc36_dashboard.catalog import collect_tests, serialize_categories
+from plc36_dashboard.catalog import collect_tests, friendly_test_name, serialize_categories
 from plc36_dashboard.database import DashboardDatabase
 from plc36_dashboard.runner import (
     InvalidSelectionError,
@@ -165,9 +165,13 @@ async def run_detail(run_id: str) -> dict[str, Any]:
     run = await asyncio.to_thread(database.get_run, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found.")
-    run["has_logs"] = (
-        await asyncio.to_thread(runner.ensure_run_log, run_id)
-    ) is not None
+    run["current_test_name"] = (
+        friendly_test_name(run["current_nodeid"])
+        if run.get("current_nodeid")
+        else None
+    )
+    for test in run.get("tests", []):
+        test["display_name"] = friendly_test_name(str(test["nodeid"]))
     return run
 
 
@@ -198,22 +202,33 @@ async def stop_run(run_id: str) -> dict[str, str]:
 @app.get("/api/runs/{run_id}/logs")
 async def view_logs(
     run_id: str,
+    source: Literal["pytest", "plc"] = Query("pytest"),
     limit: int = Query(2000, ge=1, le=5000),
 ) -> dict[str, Any]:
     if await asyncio.to_thread(database.get_run, run_id) is None:
         raise HTTPException(status_code=404, detail="Run not found.")
-    records = await asyncio.to_thread(runner.read_run_log, run_id, limit)
-    return {"run_id": run_id, "records": records}
+    path = await asyncio.to_thread(runner.run_log_path, run_id, source)
+    records = await asyncio.to_thread(runner.read_run_log, run_id, limit, source)
+    return {
+        "run_id": run_id,
+        "source": source,
+        "available": path is not None,
+        "records": records,
+    }
 
 
 @app.get("/api/runs/{run_id}/logs/download")
-async def download_logs(run_id: str) -> FileResponse:
+async def download_logs(
+    run_id: str,
+    source: Literal["pytest", "plc"] = Query("pytest"),
+) -> FileResponse:
     if await asyncio.to_thread(database.get_run, run_id) is None:
         raise HTTPException(status_code=404, detail="Run not found.")
-    path = await asyncio.to_thread(runner.ensure_run_log, run_id)
+    path = await asyncio.to_thread(runner.run_log_path, run_id, source)
     if path is None:
         raise HTTPException(status_code=404, detail="No logs are available for this run.")
-    return FileResponse(path, filename=f"plc36-{run_id}-logs.jsonl")
+    label = "pytest" if source == "pytest" else "plc-rpc"
+    return FileResponse(path, filename=f"plc36-{run_id}-{label}.jsonl")
 
 
 @app.get("/api/runs/{run_id}/events")
@@ -229,6 +244,13 @@ async def run_events(run_id: str) -> StreamingResponse:
             run = await asyncio.to_thread(database.get_run, run_id)
             if run is None:
                 break
+            run["current_test_name"] = (
+                friendly_test_name(run["current_nodeid"])
+                if run.get("current_nodeid")
+                else None
+            )
+            for test in run.get("tests", []):
+                test["display_name"] = friendly_test_name(str(test["nodeid"]))
             snapshot = json.dumps(run, sort_keys=True)
             if snapshot != last_snapshot:
                 yield f"event: snapshot\ndata: {snapshot}\n\n"

@@ -2,6 +2,7 @@ const state = {
   catalog: { categories: [], tests: [] },
   selectedTests: new Set(),
   activeRunId: null,
+  lastCompletedRunId: null,
   eventSource: null,
   benchReady: false,
   showAllTests: false,
@@ -43,13 +44,6 @@ function toast(message, isError = false) {
   toast.timer = window.setTimeout(() => node.classList.remove("show"), 3500);
 }
 
-function formatDuration(seconds) {
-  if (seconds == null) return "—";
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}m ${Math.round(seconds % 60)}s`;
-}
-
 function formatDate(value) {
   if (!value) return "—";
   return new Intl.DateTimeFormat(undefined, {
@@ -72,12 +66,38 @@ function formatPercent(value) {
   return `${Math.round((Number(value) || 0) * 10) / 10}%`;
 }
 
+function friendlyTestName(nodeid) {
+  const catalogTest = state.catalog.tests.find((test) => test.nodeid === nodeid);
+  if (catalogTest) return catalogTest.name;
+  const raw = String(nodeid || "Test").split("::").pop();
+  const match = raw.match(/^([^[]+)(?:\[(.+)\])?$/);
+  const base = (match?.[1] || raw).replace(/^test_/, "").replaceAll("_", " ");
+  const parameter = match?.[2] ? ` (${match[2].replaceAll("_", " ")})` : "";
+  return `${base.charAt(0).toUpperCase()}${base.slice(1)}${parameter}`;
+}
+
+function activateTab(name, focus = false) {
+  document.querySelectorAll("[data-tab]").forEach((button) => {
+    const active = button.dataset.tab === name;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+    if (active && focus) button.focus();
+  });
+  document.querySelectorAll("[data-panel]").forEach((panel) => {
+    const active = panel.dataset.panel === name;
+    panel.hidden = !active;
+    panel.classList.toggle("active", active);
+  });
+}
+
 function shortSelection(run) {
   if (run.selection_type === "all") return "All implemented tests";
   if (run.selection_type === "category") {
     return state.catalog.categories.find((item) => item.id === run.selection?.[0])?.name || run.selection?.[0] || "Category";
   }
-  return `${run.selection?.length || 0} selected test${run.selection?.length === 1 ? "" : "s"}`;
+  if (run.selection?.length === 1) return friendlyTestName(run.selection[0]);
+  return `${run.selection?.length || 0} selected tests`;
 }
 
 function setControlsDisabled(disabled) {
@@ -313,12 +333,13 @@ function renderRuns() {
       <td><span class="status-badge ${escapeHtml(run.status)}">${escapeHtml(run.status)}</span></td>
       <td>${escapeHtml(shortSelection(run))}</td>
       <td><span class="result-cluster"><span class="pass">${run.passed}P</span><span class="fail">${run.failed}F</span><span class="skip">${run.skipped}S</span></span></td>
-      <td>${formatDuration(run.duration_s)}</td>
       <td>${formatDate(run.started_at || run.created_at)}</td>
-      <td><button class="view-button" data-run-id="${escapeHtml(run.id)}">Details & logs</button></td>
+      <td><button class="logs-button" data-log-run-id="${escapeHtml(run.id)}">View logs</button></td>
+      <td><button class="view-button" data-run-id="${escapeHtml(run.id)}">Details</button></td>
     </tr>
   `).join("") : '<tr><td colspan="6" class="empty-cell">No recorded runs yet.</td></tr>';
   document.querySelectorAll(".view-button").forEach((button) => button.addEventListener("click", () => showRunDetail(button.dataset.runId)));
+  document.querySelectorAll(".logs-button").forEach((button) => button.addEventListener("click", () => showRunLogs(button.dataset.logRunId)));
   $("#toggle-runs").classList.toggle("hidden", state.runs.length <= 5);
   $("#toggle-runs").textContent = state.showAllRuns ? "Show latest 5" : "View all";
 }
@@ -351,12 +372,15 @@ async function startRun(selectionType, selection) {
 
 function connectRun(runId) {
   state.activeRunId = runId;
+  activateTab("tests");
   $("#active-panel").classList.remove("hidden");
   const runStateLabel = $("#run-state-label");
   if (runStateLabel) runStateLabel.innerHTML = '<span class="pulse-dot"></span> LIVE RUN';
   $("#active-title").textContent = "Test run in progress";
   $("#current-test").textContent = "Collecting selected tests…";
+  $("#stop-run").classList.remove("hidden");
   $("#stop-run").disabled = true;
+  $("#view-failed-tests").classList.add("hidden");
   setControlsDisabled(true);
   $("#active-panel").scrollIntoView({ behavior: "smooth", block: "start" });
   if (state.eventSource) state.eventSource.close();
@@ -367,12 +391,14 @@ function connectRun(runId) {
     const run = JSON.parse(event.data);
     updateActiveRun(run);
     source.close();
+    state.lastCompletedRunId = run.id;
     state.activeRunId = null;
     state.eventSource = null;
     const completedStateLabel = $("#run-state-label");
     if (completedStateLabel) completedStateLabel.textContent = "RUN COMPLETE";
     $("#active-title").textContent = run.status === "passed" ? "Run completed successfully" : `Run ${run.status}`;
-    $("#stop-run").disabled = true;
+    $("#stop-run").classList.add("hidden");
+    $("#view-failed-tests").classList.toggle("hidden", run.failed === 0);
     await Promise.all([loadBench(), loadSummary(), loadRuns(), loadAnalytics()]);
     const message = run.status === "passed" ? "All selected tests passed." : run.status === "skipped" ? "Tests were skipped because the bench was unavailable." : `Test run ${run.status}.`;
     toast(message, !["passed", "skipped"].includes(run.status));
@@ -390,7 +416,9 @@ function updateActiveRun(run) {
   $("#passed-count").textContent = run.passed;
   $("#failed-count").textContent = run.failed;
   $("#skipped-count").textContent = run.skipped;
-  $("#current-test").textContent = run.current_nodeid || (run.status === "stopping" ? "Waiting for safe fixture cleanup…" : `${completed} of ${run.total || "?"} complete`);
+  $("#current-test").textContent = run.current_test_name
+    || (run.current_nodeid ? friendlyTestName(run.current_nodeid) : null)
+    || (run.status === "stopping" ? "Waiting for safe fixture cleanup…" : `${completed} of ${run.total || "?"} complete`);
   $("#stop-run").disabled = run.status !== "running";
 }
 
@@ -404,43 +432,66 @@ async function stopActiveRun() {
   } catch (error) { toast(error.message, true); }
 }
 
-async function showRunDetail(runId) {
+async function showRunDetail(runId, failedOnly = false) {
   try {
-    const [run, logData] = await Promise.all([
-      api(`/api/runs/${encodeURIComponent(runId)}`),
-      api(`/api/runs/${encodeURIComponent(runId)}/logs`),
-    ]);
-    $("#detail-title").textContent = shortSelection(run);
-    const metrics = run.metrics || [];
-    const groupedMetrics = metrics.length ? `
-      <h3>Hardware metrics</h3>
-      <ul class="detail-list">${metrics.map((metric) => `
-        <li><span>${escapeHtml(metric.name)}</span><code>${escapeHtml(metric.nodeid.split("::").pop())}</code><span>${Number(metric.value).toFixed(4)} ${escapeHtml(metric.unit)}</span></li>
-      `).join("")}</ul>` : "";
-    const tests = run.tests?.length ? `
-      <h3>Test results</h3>
-      <ul class="detail-list">${run.tests.map((test) => `
-        <li><span class="status-badge ${escapeHtml(test.outcome)}">${escapeHtml(test.outcome)}</span><code>${escapeHtml(test.nodeid)}</code><span>${formatDuration(test.duration_s)}</span></li>
-      `).join("")}</ul>` : '<p class="empty-cell">No individual results were recorded.</p>';
-    const logText = (logData.records || []).map((record) => {
-      const timestamp = record.timestamp ? `[${record.timestamp}] ` : "";
-      return `${timestamp}${record.message}`;
-    }).join("\n");
+    const run = await api(`/api/runs/${encodeURIComponent(runId)}`);
+    $("#detail-title").textContent = failedOnly ? "Failed tests" : shortSelection(run);
+    const orderedTests = [...(run.tests || [])]
+      .filter((test) => !failedOnly || test.outcome === "failed")
+      .sort((left, right) => {
+        const outcomeOrder = Number(left.outcome !== "failed") - Number(right.outcome !== "failed");
+        const leftName = left.display_name || friendlyTestName(left.nodeid);
+        const rightName = right.display_name || friendlyTestName(right.nodeid);
+        return outcomeOrder || leftName.localeCompare(rightName);
+      });
+    const tests = orderedTests.length ? `
+      <h3>${failedOnly ? "Failed test results" : "Test results"}</h3>
+      <ul class="detail-list">${orderedTests.map((test) => `
+        <li><span class="status-badge ${escapeHtml(test.outcome)}">${escapeHtml(test.outcome)}</span><span class="test-result-name">${escapeHtml(test.display_name || friendlyTestName(test.nodeid))}</span></li>
+      `).join("")}</ul>` : '<p class="empty-cell">No matching test results were recorded.</p>';
     $("#detail-content").innerHTML = `
       <div class="detail-summary">
         <article><small>STATUS</small><strong>${escapeHtml(run.status)}</strong></article>
         <article><small>RESULTS</small><strong>${run.passed}P · ${run.failed}F · ${run.skipped}S</strong></article>
-        <article><small>DURATION</small><strong>${formatDuration(run.duration_s)}</strong></article>
         <article><small>COMMIT</small><strong>${escapeHtml(run.git_sha || "—")}</strong></article>
       </div>
-      ${tests}${groupedMetrics}
-      <h3>Logs</h3>
-      <pre class="run-log" tabindex="0">${escapeHtml(logText || "No logs are available for this run.")}</pre>
-      <div class="artifact-links">
-        ${run.has_logs ? `<a href="/api/runs/${encodeURIComponent(run.id)}/logs/download" download>Download logs (.jsonl)</a>` : ""}
-      </div>
+      ${tests}
     `;
     $("#run-detail").showModal();
+  } catch (error) { toast(error.message, true); }
+}
+
+function logRecordText(record, source) {
+  const timestamp = record.timestamp ? `[${record.timestamp}] ` : "";
+  if (source === "pytest") return `${timestamp}${record.message || ""}`;
+  const request = `${record.method || "PLC RPC"} ${JSON.stringify(record.params || {})}`;
+  return `${timestamp}${request}\n${JSON.stringify(record.body ?? {}, null, 2)}`;
+}
+
+function logCard(logData, runId, source, title, description) {
+  const logText = (logData.records || []).map((record) => logRecordText(record, source)).join("\n");
+  const body = logData.available
+    ? `<pre class="run-log" tabindex="0">${escapeHtml(logText || "The log file is empty.")}</pre>`
+    : '<div class="unavailable-log">No log was recorded for this run.</div>';
+  const download = logData.available
+    ? `<div class="artifact-links"><a href="/api/runs/${encodeURIComponent(runId)}/logs/download?source=${source}" download>Download ${escapeHtml(title)} (.jsonl)</a></div>`
+    : "";
+  return `<article class="log-card"><h3>${escapeHtml(title)}</h3><p>${escapeHtml(description)}</p>${body}${download}</article>`;
+}
+
+async function showRunLogs(runId) {
+  try {
+    const [run, pytestLog, plcLog] = await Promise.all([
+      api(`/api/runs/${encodeURIComponent(runId)}`),
+      api(`/api/runs/${encodeURIComponent(runId)}/logs?source=pytest`),
+      api(`/api/runs/${encodeURIComponent(runId)}/logs?source=plc`),
+    ]);
+    $("#logs-title").textContent = shortSelection(run);
+    $("#logs-content").innerHTML = `<div class="log-grid">
+      ${logCard(pytestLog, runId, "pytest", "Pytest log", "Raspberry Pi test output, including failure and error messages.")}
+      ${logCard(plcLog, runId, "plc", "PLC RPC log", "PLC request and response records captured in JSONL format.")}
+    </div>`;
+    $("#run-logs").showModal();
   } catch (error) { toast(error.message, true); }
 }
 
@@ -458,11 +509,25 @@ $("#test-search").addEventListener("input", (event) => renderTestPicker(event.ta
 $("#clear-tests").addEventListener("click", () => { state.selectedTests.clear(); renderTestPicker($("#test-search").value); });
 $("#run-selected").addEventListener("click", () => startRun("tests", [...state.selectedTests]));
 $("#stop-run").addEventListener("click", stopActiveRun);
+$("#view-failed-tests").addEventListener("click", () => {
+  if (state.lastCompletedRunId) showRunDetail(state.lastCompletedRunId, true);
+});
 $("#refresh-bench").addEventListener("click", loadBench);
 $("#refresh-runs").addEventListener("click", async () => { await Promise.all([loadSummary(), loadRuns(), loadAnalytics()]); toast("Run history refreshed."); });
 $("#toggle-runs").addEventListener("click", () => { state.showAllRuns = !state.showAllRuns; renderRuns(); });
 $("#analytics-period").addEventListener("change", async (event) => { state.analyticsPeriod = event.target.value; await loadAnalytics(); });
 $("#close-detail").addEventListener("click", () => $("#run-detail").close());
+$("#close-logs").addEventListener("click", () => $("#run-logs").close());
+document.querySelectorAll("[data-tab]").forEach((button) => {
+  button.addEventListener("click", () => activateTab(button.dataset.tab));
+  button.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    const tabs = [...document.querySelectorAll("[data-tab]")];
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    const index = (tabs.indexOf(button) + direction + tabs.length) % tabs.length;
+    activateTab(tabs[index].dataset.tab, true);
+  });
+});
 
 initialize();
 window.setInterval(() => { if (!state.activeRunId) loadBench(); }, 15000);

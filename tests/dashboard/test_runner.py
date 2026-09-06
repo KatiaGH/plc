@@ -127,6 +127,37 @@ def test_runner_converts_legacy_log_to_single_jsonl_format(tmp_path: Path) -> No
     assert (run_dir / "run-log.jsonl").is_file()
 
 
+def test_runner_keeps_pytest_and_plc_logs_separate(tmp_path: Path) -> None:
+    database = DashboardDatabase(tmp_path / "dashboard.sqlite3")
+    database.create_run(
+        run_id="two-logs",
+        selection_type="all",
+        selection=[],
+        git_sha="abc1234",
+        dut_ip=None,
+        capture_dut_logs=False,
+    )
+    runner = DashboardTestRunner(tmp_path, database)
+    run_dir = runner.output_root / "two-logs"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run-log.jsonl").write_text(
+        json.dumps({"source": "pytest", "message": "assertion failed"}) + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "rpc_responses.jsonl").write_text(
+        json.dumps({"method": "Number.GetStatus", "body": {"value": 50}}) + "\n",
+        encoding="utf-8",
+    )
+
+    pytest_records = runner.read_run_log("two-logs", source="pytest")
+    plc_records = runner.read_run_log("two-logs", source="plc")
+
+    assert pytest_records == [{"source": "pytest", "message": "assertion failed"}]
+    assert plc_records == [
+        {"method": "Number.GetStatus", "body": {"value": 50}}
+    ]
+
+
 def test_event_file_updates_progress_while_run_is_active(tmp_path: Path) -> None:
     database = DashboardDatabase(tmp_path / "dashboard.sqlite3")
     database.create_run(
