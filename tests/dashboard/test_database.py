@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
 from pathlib import Path
 
 from plc36_dashboard.database import DashboardDatabase
@@ -52,8 +53,20 @@ def test_database_records_results_and_metrics(tmp_path: Path) -> None:
     assert summary["skipped_percent"] == 0.0
     assert summary["total_execution_time_s"] >= 0
 
-    analytics = database.test_case_history("week")
-    assert analytics["period"] == "week"
+    analytics = database.test_case_history("current_week")
+    assert analytics["period"] == "current_week"
+    assert analytics["start_date"] is not None
+    assert analytics["end_date"] is not None
     assert analytics["daily"][-1]["passed"] == 1
     assert analytics["daily"][-1]["failed"] == 0
     assert analytics["daily"][-1]["skipped"] == 0
+    start_date = date.fromisoformat(analytics["start_date"])
+    end_date = date.fromisoformat(analytics["end_date"])
+    assert start_date.weekday() == 0
+    assert end_date == start_date + timedelta(days=6)
+
+    last_week = database.test_case_history("last_week")
+    last_week_start = date.fromisoformat(last_week["start_date"])
+    last_week_end = date.fromisoformat(last_week["end_date"])
+    assert last_week_start.weekday() == 0
+    assert last_week_end == last_week_start + timedelta(days=6)

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Run and monitor PLC-36 hardware tests.">
   <title>PLC-36 Test Bench</title>
-  <link rel="stylesheet" href="/static/app.css?v=9">
+  <link rel="stylesheet" href="/static/app.css?v=10">
 </head>
 <body>
   <div class="shell">
@@ -54,20 +54,20 @@
           <article class="analytics-card daily-chart-card">
             <header class="analytics-header">
               <div><h3>Test cases per day</h3><p>Daily passed, failed, and skipped results</p></div>
-              <label class="period-control"><span>Period</span><select id="analytics-period"><option value="week" selected>Week</option><option value="month">Month</option><option value="year">Year</option><option value="max">Max</option></select></label>
+              <label class="period-control"><span class="sr-only">Time range</span><select id="analytics-period"><option value="current_week" selected>Current week</option><option value="last_week">Last week</option><option value="last_month">Last month</option><option value="last_year">Last year</option><option value="max">Max</option></select></label>
             </header>
             <div class="line-chart" id="daily-chart" aria-live="polite"></div>
             <div class="chart-legend" aria-label="Chart legend"><span class="pass">Passed</span><span class="fail">Failed</span><span class="skip">Skipped</span></div>
           </article>
           <article class="analytics-card status-chart-card">
-            <header class="analytics-header"><div><h3>Test case results by status</h3><p id="status-period-label">Latest 7 days</p></div></header>
+            <header class="analytics-header"><div><h3>Test case results by status</h3><p id="status-period-label">Current week</p></div></header>
             <div class="status-donut" id="status-donut" aria-live="polite"></div>
             <div class="status-breakdown" id="status-breakdown"></div>
           </article>
         </div>
         <div class="hardware-metrics-card">
           <div class="card-title-with-help">
-            <div><h3>Latest hardware measurements</h3><p>Most recent values produced by measurement tests</p></div>
+            <div><h3>Latest hardware measurements</h3></div>
             <button class="help-button" type="button" aria-label="About hardware measurements" data-tooltip="Physical values captured by sensor and output-accuracy tests, separate from aggregate test health.">?</button>
           </div>
           <div class="hardware-metric-list" id="hardware-metrics"><span class="empty-metric">Measurements will appear after an accuracy or 1-Wire run.</span></div>
@@ -155,6 +155,6 @@
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=9" defer></script>
+  <script src="/static/app.js?v=10" defer></script>
 </body>
 </html>

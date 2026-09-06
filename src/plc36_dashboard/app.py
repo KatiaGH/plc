@@ -150,7 +150,13 @@ async def summary() -> dict[str, Any]:
 
 @app.get("/api/analytics")
 async def analytics(
-    period: Literal["week", "month", "year", "max"] = Query("week"),
+    period: Literal[
+        "current_week",
+        "last_week",
+        "last_month",
+        "last_year",
+        "max",
+    ] = Query("current_week"),
 ) -> dict[str, Any]:
     return await asyncio.to_thread(database.test_case_history, period)
 

@@ -8,7 +8,7 @@ const state = {
   showAllTests: false,
   showAllRuns: false,
   runs: [],
-  analyticsPeriod: "week",
+  analyticsPeriod: "current_week",
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -213,36 +213,41 @@ async function loadSummary() {
 }
 
 function renderHardwareMetrics(metrics) {
-  const labels = {
-    temperature_mean: "Mean temperature",
-    temperature_spread: "Temperature spread",
-    raw_mae: "Raw MAE",
-    calibrated_mae: "Calibrated MAE",
-    calibrated_max_error: "Maximum error",
-  };
-  const important = metrics.filter((metric) => labels[metric.name]).slice(0, 12);
-  $("#hardware-metrics").innerHTML = important.length ? important.map((metric) => {
-    const subject = metric.labels.sensor ? `Sensor ${metric.labels.sensor}` : metric.labels.channel || "Bench";
-    const digits = metric.unit === "°C" ? 2 : 4;
-    return `<article class="hardware-metric"><small>${escapeHtml(subject)}</small><strong>${Number(metric.value).toFixed(digits)} ${escapeHtml(metric.unit)}</strong><span>${escapeHtml(labels[metric.name])}</span></article>`;
-  }).join("") : '<span class="empty-metric">Measurements will appear after an accuracy or 1-Wire run.</span>';
+  const findMetric = (name, label, value) => metrics.find((metric) => (
+    metric.name === name && String(metric.labels?.[label]) === String(value)
+  ));
+  const value = (metric, digits) => metric
+    ? `${Number(metric.value).toFixed(digits)} ${escapeHtml(metric.unit)}`
+    : "—";
+  const measurement = (label, metric, digits) => `
+    <div class="measurement-row"><span>${label}</span><strong>${value(metric, digits)}</strong></div>`;
+  const sensorCards = [1, 2].map((sensor) => `
+    <article class="hardware-metric-group sensor-metric-group">
+      <h4>Sensor ${sensor}</h4>
+      ${measurement("Mean temperature", findMetric("temperature_mean", "sensor", sensor), 2)}
+      ${measurement("Temperature spread", findMetric("temperature_spread", "sensor", sensor), 3)}
+    </article>`);
+  const outputCards = ["O1", "O2", "O3", "O4"].map((channel) => `
+    <article class="hardware-metric-group output-metric-group">
+      <h4>${channel}</h4>
+      ${measurement("Maximum error", findMetric("calibrated_max_error", "channel", channel), 4)}
+      ${measurement("Calibrated MAE", findMetric("calibrated_mae", "channel", channel), 4)}
+      ${measurement("Raw MAE", findMetric("raw_mae", "channel", channel), 4)}
+    </article>`);
+  $("#hardware-metrics").innerHTML = [...sensorCards, ...outputCards].join("");
 }
 
 function isoDate(date) {
   return date.toISOString().slice(0, 10);
 }
 
-function completeDailySeries(rows, period) {
+function completeDailySeries(rows, startDate, endDate) {
   const byDate = new Map(rows.map((row) => [row.date, row]));
-  const end = new Date();
-  end.setUTCHours(0, 0, 0, 0);
-  const days = { week: 7, month: 30, year: 365 };
-  let start;
-  if (period === "max" && rows.length) start = new Date(`${rows[0].date}T00:00:00Z`);
-  else {
-    start = new Date(end);
-    start.setUTCDate(start.getUTCDate() - ((days[period] || 7) - 1));
-  }
+  const end = new Date(`${endDate}T00:00:00Z`);
+  const start = startDate
+    ? new Date(`${startDate}T00:00:00Z`)
+    : new Date(`${rows[0]?.date || endDate}T00:00:00Z`);
+  if (!startDate && !rows.length) start.setUTCDate(start.getUTCDate() - 6);
 
   const series = [];
   for (const day = new Date(start); day <= end; day.setUTCDate(day.getUTCDate() + 1)) {
@@ -316,12 +321,22 @@ function renderStatusSummary(series, period) {
     const percent = total ? (totals[key] / total) * 100 : 0;
     return `<div class="status-row"><span class="status-name ${key}">${label}</span><strong>${formatPercent(percent)}</strong><span class="status-count">${totals[key]}</span></div>`;
   }).join("");
-  $("#status-period-label").textContent = { week: "Latest 7 days", month: "Latest 30 days", year: "Latest 365 days", max: "All recorded history" }[period];
+  $("#status-period-label").textContent = {
+    current_week: "Current week",
+    last_week: "Last week",
+    last_month: "Last month",
+    last_year: "Last year",
+    max: "All recorded history",
+  }[period];
 }
 
 async function loadAnalytics() {
   const analytics = await api(`/api/analytics?period=${encodeURIComponent(state.analyticsPeriod)}`);
-  const series = completeDailySeries(analytics.daily || [], analytics.period);
+  const series = completeDailySeries(
+    analytics.daily || [],
+    analytics.start_date,
+    analytics.end_date,
+  );
   renderDailyChart(series);
   renderStatusSummary(series, analytics.period);
 }

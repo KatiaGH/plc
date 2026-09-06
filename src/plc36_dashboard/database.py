@@ -343,20 +343,45 @@ class DashboardDatabase:
             ).fetchall()
         return [self._row(row) or {} for row in rows]
 
-    def test_case_history(self, period: str = "week") -> dict[str, Any]:
-        period_days = {"week": 7, "month": 30, "year": 365}
-        if period != "max" and period not in period_days:
+    def test_case_history(self, period: str = "current_week") -> dict[str, Any]:
+        supported_periods = {
+            "current_week",
+            "last_week",
+            "last_month",
+            "last_year",
+            "max",
+        }
+        if period not in supported_periods:
             raise ValueError(f"Unsupported analytics period: {period}")
 
         where = ""
         parameters: tuple[str, ...] = ()
+        today = datetime.now(timezone.utc).date()
+        current_week_start = today - timedelta(days=today.weekday())
+        start_date = None
+        end_date = today
+
+        if period == "current_week":
+            start_date = current_week_start
+            end_date = current_week_start + timedelta(days=6)
+        elif period == "last_week":
+            start_date = current_week_start - timedelta(days=7)
+            end_date = current_week_start - timedelta(days=1)
+        elif period == "last_month":
+            current_month_start = today.replace(day=1)
+            end_date = current_month_start - timedelta(days=1)
+            start_date = end_date.replace(day=1)
+        elif period == "last_year":
+            start_date = today.replace(year=today.year - 1, month=1, day=1)
+            end_date = today.replace(year=today.year - 1, month=12, day=31)
+
         if period != "max":
-            start_date = (
-                datetime.now(timezone.utc).date()
-                - timedelta(days=period_days[period] - 1)
-            ).isoformat()
-            where = "WHERE substr(r.created_at, 1, 10) >= ?"
-            parameters = (start_date,)
+            assert start_date is not None
+            where = "WHERE r.created_at >= ? AND r.created_at < ?"
+            parameters = (
+                f"{start_date.isoformat()}T00:00:00",
+                f"{(end_date + timedelta(days=1)).isoformat()}T00:00:00",
+            )
 
         with self._connect() as db:
             rows = db.execute(
@@ -377,6 +402,8 @@ class DashboardDatabase:
 
         return {
             "period": period,
+            "start_date": start_date.isoformat() if start_date else None,
+            "end_date": end_date.isoformat(),
             "daily": [
                 {
                     "date": str(row["date"]),
