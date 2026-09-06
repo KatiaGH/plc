@@ -4,6 +4,9 @@ const state = {
   activeRunId: null,
   eventSource: null,
   benchReady: false,
+  showAllTests: false,
+  showAllRuns: false,
+  runs: [],
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -53,6 +56,12 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
+function formatShortDate(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return `${date.getDate()}.${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function shortSelection(run) {
   if (run.selection_type === "all") return "All implemented tests";
   if (run.selection_type === "category") {
@@ -78,7 +87,8 @@ async function loadCatalog() {
 }
 
 function renderTestCards() {
-  $("#test-grid").innerHTML = state.catalog.categories.map((category, index) => `
+  const categories = state.showAllTests ? state.catalog.categories : state.catalog.categories.slice(0, 4);
+  $("#test-grid").innerHTML = categories.map((category, index) => `
     <article class="test-card" data-accent="${escapeHtml(category.accent)}">
       <div class="test-card-heading">
         <span class="test-card-index">${String(index + 1).padStart(2, "0")}</span>
@@ -96,6 +106,8 @@ function renderTestCards() {
   document.querySelectorAll("button[data-category]").forEach((button) => {
     button.addEventListener("click", () => startRun("category", [button.dataset.category]));
   });
+  $("#toggle-tests").classList.toggle("hidden", state.catalog.categories.length <= 4);
+  $("#toggle-tests").textContent = state.showAllTests ? "Show fewer tests" : "Show more tests";
   setControlsDisabled(Boolean(state.activeRunId));
 }
 
@@ -139,28 +151,22 @@ async function loadBench() {
     const bench = await api("/api/bench");
     const reserved = bench.state === "reserved";
     state.benchReady = reserved ? Boolean(bench.active_run_id) : Boolean(bench.ready);
-    const pill = $("#bench-pill");
-    const dot = pill.querySelector(".status-dot");
     const devicesInActiveRun = Boolean(reserved && bench.active_run_id);
     const dutActive = devicesInActiveRun || Boolean(bench.dut.online);
     const hatActive = devicesInActiveRun || Boolean(bench.hat.online);
-    dot.className = `status-dot ${reserved ? "busy" : bench.ready ? "online" : "offline"}`;
     $("#dut-light").className = `device-status-light ${dutActive ? "online" : "offline"}`;
     $("#hat-light").className = `device-status-light ${hatActive ? "online" : "offline"}`;
-    pill.querySelector("span:last-child").textContent = reserved ? "Bench reserved" : bench.ready ? "Bench ready" : "Bench unavailable";
+    $("#bench-status").textContent = reserved ? "Bench reserved" : bench.ready ? "Bench ready" : "Bench unavailable";
     const dutState = bench.dut.state || "Online";
     $("#dut-state").textContent = reserved ? "Reserved by test run" : bench.dut.online ? `${dutState.charAt(0).toUpperCase()}${dutState.slice(1)}` : "Offline";
-    $("#dut-detail").textContent = `PLC ${bench.dut.ip}`;
     $("#hat-state").textContent = reserved ? "Reserved by test run" : bench.hat.online ? "Connected" : "Offline";
-    $("#hat-detail").textContent = bench.hat.firmware ? `Stack ${bench.hat.stack} · FW ${bench.hat.firmware}` : `Stack ${bench.hat.stack}`;
-    $("#lock-state").textContent = reserved ? "Reserved" : "Available";
     if (bench.active_run_id && !state.activeRunId) connectRun(bench.active_run_id);
     setControlsDisabled(reserved || !bench.ready);
   } catch (error) {
     state.benchReady = false;
     $("#dut-light").className = "device-status-light offline";
     $("#hat-light").className = "device-status-light offline";
-    $("#bench-pill").querySelector("span:last-child").textContent = "Status unavailable";
+    $("#bench-status").textContent = "Status unavailable";
     setControlsDisabled(true);
     toast(error.message, true);
   }
@@ -170,9 +176,8 @@ async function loadSummary() {
   const summary = await api("/api/summary");
   $("#pass-rate").textContent = summary.passed_tests + summary.failed_tests ? `${summary.pass_rate.toFixed(1)}%` : "—";
   $("#total-runs").textContent = summary.total_runs;
-  $("#run-outcomes").textContent = summary.total_runs ? `${summary.passed_runs} passed · ${summary.failed_runs} failed · ${summary.skipped_runs} skipped` : "No completed runs";
+  $("#failed-runs").textContent = summary.failed_runs;
   $("#average-duration").textContent = summary.total_runs ? formatDuration(summary.average_duration_s) : "—";
-  $("#failed-tests").textContent = summary.failed_tests;
   renderRunChart(summary.recent_runs);
   renderHardwareMetrics(summary.latest_metrics || []);
 }
@@ -201,17 +206,23 @@ function renderRunChart(runs) {
     const failHeight = total ? (run.failed / total) * 100 : 0;
     const skipHeight = total ? (run.skipped / total) * 100 : 0;
     const title = `${run.passed} passed · ${run.failed} failed · ${run.skipped} skipped · ${formatDate(run.created_at)}`;
-    return `<span class="run-stack ${escapeHtml(run.status)}" title="${escapeHtml(title)}">
-      <span class="run-segment pass" style="height:${passHeight}%"></span>
-      <span class="run-segment fail" style="height:${failHeight}%"></span>
-      <span class="run-segment skip" style="height:${skipHeight}%"></span>
-    </span>`;
+    return `<button class="run-chart-button" type="button" data-run-id="${escapeHtml(run.id)}" aria-label="${escapeHtml(title)}">
+      <span class="run-stack ${escapeHtml(run.status)}" title="${escapeHtml(title)}">
+        <span class="run-segment pass" style="height:${passHeight}%"></span>
+        <span class="run-segment fail" style="height:${failHeight}%"></span>
+        <span class="run-segment skip" style="height:${skipHeight}%"></span>
+      </span>
+      <span class="run-date">${escapeHtml(formatShortDate(run.created_at))}</span>
+    </button>`;
   }).join("") : '<span class="empty-cell">Run results will appear here.</span>';
+  document.querySelectorAll(".run-chart-button").forEach((button) => {
+    button.addEventListener("click", () => showRunDetail(button.dataset.runId));
+  });
 }
 
-async function loadRuns() {
-  const runs = await api("/api/runs?limit=30");
-  $("#runs-table").innerHTML = runs.length ? runs.map((run) => `
+function renderRuns() {
+  const visibleRuns = state.showAllRuns ? state.runs : state.runs.slice(0, 5);
+  $("#runs-table").innerHTML = visibleRuns.length ? visibleRuns.map((run) => `
     <tr>
       <td><span class="status-badge ${escapeHtml(run.status)}">${escapeHtml(run.status)}</span></td>
       <td>${escapeHtml(shortSelection(run))}</td>
@@ -222,7 +233,14 @@ async function loadRuns() {
     </tr>
   `).join("") : '<tr><td colspan="6" class="empty-cell">No recorded runs yet.</td></tr>';
   document.querySelectorAll(".view-button").forEach((button) => button.addEventListener("click", () => showRunDetail(button.dataset.runId)));
-  const active = runs.find((run) => ["queued", "running", "stopping"].includes(run.status));
+  $("#toggle-runs").classList.toggle("hidden", state.runs.length <= 5);
+  $("#toggle-runs").textContent = state.showAllRuns ? "Show latest 5" : "View all";
+}
+
+async function loadRuns() {
+  state.runs = await api("/api/runs?limit=200");
+  renderRuns();
+  const active = state.runs.find((run) => ["queued", "running", "stopping"].includes(run.status));
   if (active && !state.activeRunId) connectRun(active.id);
 }
 
@@ -348,6 +366,7 @@ async function initialize() {
 }
 
 $("#run-all").addEventListener("click", () => startRun("all", []));
+$("#toggle-tests").addEventListener("click", () => { state.showAllTests = !state.showAllTests; renderTestCards(); });
 $("#open-picker").addEventListener("click", () => $("#test-picker").showModal());
 $("#test-search").addEventListener("input", (event) => renderTestPicker(event.target.value));
 $("#clear-tests").addEventListener("click", () => { state.selectedTests.clear(); renderTestPicker($("#test-search").value); });
@@ -355,6 +374,7 @@ $("#run-selected").addEventListener("click", () => startRun("tests", [...state.s
 $("#stop-run").addEventListener("click", stopActiveRun);
 $("#refresh-bench").addEventListener("click", loadBench);
 $("#refresh-runs").addEventListener("click", async () => { await Promise.all([loadSummary(), loadRuns()]); toast("Run history refreshed."); });
+$("#toggle-runs").addEventListener("click", () => { state.showAllRuns = !state.showAllRuns; renderRuns(); });
 $("#close-detail").addEventListener("click", () => $("#run-detail").close());
 
 initialize();

@@ -5,18 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Run and monitor PLC-36 hardware tests.">
   <title>PLC-36 Test Bench</title>
-  <link rel="stylesheet" href="/static/app.css?v=6">
+  <link rel="stylesheet" href="/static/app.css?v=7">
 </head>
 <body>
   <div class="shell">
     <header class="topbar">
-      <a class="brand" href="#top" aria-label="PLC-36 Test Bench home">
-        <span class="brand-mark" aria-hidden="true">36</span>
-        <span><strong>PLC-36</strong><small>TEST BENCH</small></span>
-      </a>
-      <div class="bench-pill" id="bench-pill" aria-live="polite">
-        <span class="status-dot neutral"></span>
-        <span>Checking bench…</span>
+      <div class="topbar-inner">
+        <a class="brand" href="#top" aria-label="PLC-36 Test Bench home">
+          <span class="brand-mark" aria-hidden="true">36</span>
+          <span><strong>PLC-36</strong><small>TEST BENCH</small></span>
+        </a>
+        <section class="bench-strip" aria-label="Bench connections">
+          <article>
+            <span class="connector-icon" aria-hidden="true">PLC<span class="device-status-light neutral" id="dut-light"></span></span>
+            <div><small>DEVICE UNDER TEST</small><strong id="dut-state">Checking…</strong></div>
+          </article>
+          <article>
+            <span class="connector-icon" aria-hidden="true">HAT<span class="device-status-light neutral" id="hat-light"></span></span>
+            <div><small>MEASUREMENT HARDWARE</small><strong id="hat-state">Checking…</strong></div>
+          </article>
+          <button class="icon-button" id="refresh-bench" title="Refresh bench status" aria-label="Refresh bench status">↻</button>
+        </section>
+        <span class="sr-only" id="bench-status" aria-live="polite">Checking bench…</span>
       </div>
     </header>
 
@@ -25,88 +35,95 @@
         <p class="dashboard-description">PLC-36 hardware test dashboard for a Raspberry Pi and MegaIND HAT bench. Test coverage includes variable outputs, analog and digital inputs, internal relays, isolated outputs, and 1-Wire sensors. Progress, measurements, results, and logs are recorded automatically.</p>
       </section>
 
-      <section class="bench-strip" aria-label="Bench connections">
-        <article>
-          <span class="connector-icon" aria-hidden="true">PLC<span class="device-status-light neutral" id="dut-light"></span></span>
-          <div><small>DEVICE UNDER TEST</small><strong id="dut-state">Checking…</strong><span id="dut-detail">—</span></div>
-        </article>
-        <article>
-          <span class="connector-icon" aria-hidden="true">HAT<span class="device-status-light neutral" id="hat-light"></span></span>
-          <div><small>MEASUREMENT HARDWARE</small><strong id="hat-state">Checking…</strong><span id="hat-detail">—</span></div>
-        </article>
-        <article>
-          <span class="connector-icon lock" aria-hidden="true">01</span>
-          <div><small>BENCH ACCESS</small><strong id="lock-state">Checking…</strong><span>Single-run hardware lock</span></div>
-        </article>
-        <button class="icon-button" id="refresh-bench" title="Refresh bench status" aria-label="Refresh bench status">↻</button>
-      </section>
-
-      <section class="workspace" aria-labelledby="tests-title">
-        <div class="section-heading">
-          <p class="eyebrow tests-label" id="tests-title">TESTS</p>
-          <div class="test-actions">
+      <div class="dashboard-grid">
+        <section class="workspace" aria-labelledby="tests-title">
+          <div class="section-heading compact-heading">
+            <p class="eyebrow tests-label" id="tests-title">TESTS</p>
             <button class="run-all" id="run-all" type="button">
               <span class="play-icon" aria-hidden="true"></span>
               <strong>Run all tests</strong>
             </button>
+          </div>
+          <div class="test-grid" id="test-grid" aria-live="polite"></div>
+          <div class="test-list-actions">
+            <button class="text-button" id="toggle-tests" type="button">Show more tests</button>
             <button class="secondary-button" id="open-picker" type="button">Choose individual tests</button>
           </div>
-        </div>
-        <div class="test-grid" id="test-grid" aria-live="polite"></div>
-      </section>
+        </section>
 
-      <section class="active-panel hidden" id="active-panel" aria-labelledby="active-title">
-        <div class="active-header">
-          <div>
-            <p class="eyebrow" id="run-state-label"><span class="pulse-dot"></span> LIVE RUN</p>
-            <h2 id="active-title">Preparing test run</h2>
-            <p id="current-test">Waiting for collection…</p>
-          </div>
-          <button class="stop-button" id="stop-run" type="button" disabled>Stop</button>
-        </div>
-        <div class="progress-track" aria-label="Test progress"><span id="progress-bar"></span></div>
-        <div class="run-counters">
-          <span><strong id="progress-value">0%</strong> complete</span>
-          <span class="passed"><strong id="passed-count">0</strong> passed</span>
-          <span class="failed"><strong id="failed-count">0</strong> failed</span>
-          <span class="skipped"><strong id="skipped-count">0</strong> skipped</span>
-        </div>
-      </section>
+        <div class="dashboard-main">
+          <section class="active-panel hidden" id="active-panel" aria-labelledby="active-title">
+            <div class="active-header">
+              <div>
+                <p class="eyebrow" id="run-state-label"><span class="pulse-dot"></span> LIVE RUN</p>
+                <h2 id="active-title">Preparing test run</h2>
+                <p id="current-test">Waiting for collection…</p>
+              </div>
+              <button class="stop-button" id="stop-run" type="button" disabled>Stop</button>
+            </div>
+            <div class="progress-track" aria-label="Test progress"><span id="progress-bar"></span></div>
+            <div class="run-counters">
+              <span><strong id="progress-value">0%</strong> complete</span>
+              <span class="passed"><strong id="passed-count">0</strong> passed</span>
+              <span class="failed"><strong id="failed-count">0</strong> failed</span>
+              <span class="skipped"><strong id="skipped-count">0</strong> skipped</span>
+            </div>
+          </section>
 
-      <section class="metrics-section" aria-labelledby="metrics-title">
-        <div class="section-heading">
-          <div><p class="eyebrow">TEST HEALTH</p><h2 id="metrics-title">Bench metrics</h2></div>
-        </div>
-        <div class="metric-grid">
-          <article class="metric-card primary"><small>PASS RATE</small><strong id="pass-rate">—</strong><span>Passed tests, excluding skips</span></article>
-          <article class="metric-card"><small>TOTAL RUNS</small><strong id="total-runs">0</strong><span id="run-outcomes">No completed runs</span></article>
-          <article class="metric-card"><small>AVERAGE DURATION</small><strong id="average-duration">—</strong><span>Across completed runs</span></article>
-          <article class="metric-card"><small>FAILED TESTS</small><strong id="failed-tests">0</strong><span>Across recorded history</span></article>
-        </div>
-        <div class="trend-card">
-          <div><h3>Recent run health</h3><p>Latest 12 runs</p></div>
-          <div class="run-chart" id="run-chart" aria-label="Recent run results"></div>
-        </div>
-        <div class="hardware-metrics-card">
-          <div><h3>Latest hardware measurements</h3><p>Temperature stability and calibrated output accuracy</p></div>
-          <div class="hardware-metric-list" id="hardware-metrics">
-            <span class="empty-metric">Measurements will appear after an accuracy or 1-Wire run.</span>
-          </div>
-        </div>
-      </section>
+          <section class="metrics-section" aria-labelledby="metrics-title">
+            <div class="section-heading">
+              <p class="eyebrow" id="metrics-title">TEST HEALTH</p>
+            </div>
+            <div class="metric-grid">
+              <article class="metric-card primary">
+                <div class="metric-label"><small>PASS RATE</small><button class="help-button metric-help" type="button" aria-label="Pass rate calculation" data-tooltip="Passed tests divided by passed plus failed tests, multiplied by 100. Skipped tests are excluded.">?</button></div>
+                <strong id="pass-rate">—</strong>
+              </article>
+              <article class="metric-card">
+                <div class="metric-label"><small>TOTAL RUNS</small><button class="help-button metric-help" type="button" aria-label="Total runs calculation" data-tooltip="The total number of test runs recorded by the dashboard.">?</button></div>
+                <strong id="total-runs">0</strong>
+              </article>
+              <article class="metric-card">
+                <div class="metric-label"><small>FAILED RUNS</small><button class="help-button metric-help" type="button" aria-label="Failed runs calculation" data-tooltip="The number of recorded runs whose final status is failed.">?</button></div>
+                <strong id="failed-runs">0</strong>
+              </article>
+              <article class="metric-card">
+                <div class="metric-label"><small>AVERAGE DURATION</small><button class="help-button metric-help" type="button" aria-label="Average duration calculation" data-tooltip="The mean elapsed time of recorded runs that have a measured duration.">?</button></div>
+                <strong id="average-duration">—</strong>
+              </article>
+            </div>
+            <div class="trend-card">
+              <div><h3>Recent run health</h3><p>Latest 12 runs · select a date for details and logs</p></div>
+              <div class="run-chart" id="run-chart" aria-label="Recent run results"></div>
+            </div>
+            <div class="hardware-metrics-card">
+              <div class="card-title-with-help">
+                <div><h3>Latest hardware measurements</h3><p>Most recent values produced by measurement tests</p></div>
+                <button class="help-button" type="button" aria-label="About hardware measurements" data-tooltip="These are physical values captured by sensor and output-accuracy tests. They describe the hardware reading itself, unlike the aggregate pass, failure, and duration metrics above.">?</button>
+              </div>
+              <div class="hardware-metric-list" id="hardware-metrics">
+                <span class="empty-metric">Measurements will appear after an accuracy or 1-Wire run.</span>
+              </div>
+            </div>
+          </section>
 
-      <section class="history-section" aria-labelledby="history-title">
-        <div class="section-heading">
-          <div><p class="eyebrow">HISTORY</p><h2 id="history-title">Recent runs</h2></div>
-          <button class="text-button" id="refresh-runs" type="button">Refresh</button>
+          <section class="history-section" aria-labelledby="history-title">
+            <div class="section-heading">
+              <div><p class="eyebrow">HISTORY</p><h2 id="history-title">Recent runs</h2></div>
+              <div class="history-actions">
+                <button class="text-button hidden" id="toggle-runs" type="button">View all</button>
+                <button class="text-button" id="refresh-runs" type="button">Refresh</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Status</th><th>Selection</th><th>Results</th><th>Duration</th><th>Started</th><th></th></tr></thead>
+                <tbody id="runs-table"><tr><td colspan="6" class="empty-cell">No recorded runs yet.</td></tr></tbody>
+              </table>
+            </div>
+          </section>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Status</th><th>Selection</th><th>Results</th><th>Duration</th><th>Started</th><th></th></tr></thead>
-            <tbody id="runs-table"><tr><td colspan="6" class="empty-cell">No recorded runs yet.</td></tr></tbody>
-          </table>
-        </div>
-      </section>
+      </div>
     </main>
   </div>
 
@@ -143,6 +160,6 @@
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=6" defer></script>
+  <script src="/static/app.js?v=7" defer></script>
 </body>
 </html>
