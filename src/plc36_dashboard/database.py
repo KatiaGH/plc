@@ -71,6 +71,13 @@ class DashboardDatabase:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS test_presets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                    selection_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_runs_created_at
                     ON runs(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_test_results_run_outcome
@@ -80,6 +87,38 @@ class DashboardDatabase:
                 """
             )
             db.execute("PRAGMA optimize")
+
+    def list_presets(self) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT id, name, selection_json, created_at "
+                "FROM test_presets ORDER BY name COLLATE NOCASE, id"
+            ).fetchall()
+        return [
+            {
+                "id": int(row["id"]),
+                "name": str(row["name"]),
+                "tests": json.loads(row["selection_json"]),
+                "created_at": str(row["created_at"]),
+            }
+            for row in rows
+        ]
+
+    def create_preset(self, name: str, tests: list[str]) -> dict[str, Any]:
+        created_at = utc_now()
+        unique_tests = list(dict.fromkeys(tests))
+        with self._connect() as db:
+            cursor = db.execute(
+                "INSERT INTO test_presets(name, selection_json, created_at) VALUES (?, ?, ?)",
+                (name, json.dumps(unique_tests), created_at),
+            )
+            preset_id = int(cursor.lastrowid)
+        return {
+            "id": preset_id,
+            "name": name,
+            "tests": unique_tests,
+            "created_at": created_at,
+        }
 
     @staticmethod
     def _row(row: sqlite3.Row | None) -> dict[str, Any] | None:

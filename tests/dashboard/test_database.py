@@ -8,6 +8,14 @@ from plc36_dashboard.database import DashboardDatabase
 
 def test_database_records_results_and_metrics(tmp_path: Path) -> None:
     database = DashboardDatabase(tmp_path / "dashboard.sqlite3")
+    preset = database.create_preset(
+        "Output checks",
+        ["tests/example.py::test_signal", "tests/example.py::test_signal"],
+    )
+    assert preset["name"] == "Output checks"
+    assert preset["tests"] == ["tests/example.py::test_signal"]
+    assert database.list_presets() == [preset]
+
     database.create_run(
         run_id="run-1",
         selection_type="tests",

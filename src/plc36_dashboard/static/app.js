@@ -1,14 +1,17 @@
 const state = {
   catalog: { categories: [], tests: [] },
+  presets: [],
   selectedTests: new Set(),
+  selectedPresetIds: new Set(),
   activeRunId: null,
   lastCompletedRunId: null,
   eventSource: null,
   benchReady: false,
-  showAllTests: false,
+  showAllIndividualTests: false,
   showAllRuns: false,
   runs: [],
   analyticsPeriod: "current_week",
+  controlsLocked: false,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -101,79 +104,148 @@ function shortSelection(run) {
 }
 
 function setControlsDisabled(disabled) {
+  state.controlsLocked = disabled;
   $("#run-all").disabled = disabled || !state.benchReady;
-  document.querySelectorAll(".test-card button[data-category]").forEach((button) => {
-    button.disabled = disabled || !state.benchReady || button.dataset.available !== "true";
-  });
-  $("#open-picker").disabled = disabled || !state.benchReady;
+  updatePresetControls();
+  updateIndividualControls();
 }
 
 async function loadCatalog() {
   const catalog = await api("/api/catalog");
   state.catalog = catalog;
-  renderTestCards();
-  renderTestPicker();
+  renderPresetCards();
+  renderIndividualTests();
   if (catalog.collection_error) toast(`Test collection warning: ${catalog.collection_error}`, true);
 }
 
-function renderTestCards() {
-  const categories = state.showAllTests ? state.catalog.categories : state.catalog.categories.slice(0, 4);
-  $("#test-grid").innerHTML = categories.map((category, index) => `
-    <article class="test-card" data-accent="${escapeHtml(category.accent)}">
-      <div class="test-card-heading">
-        <span class="test-card-index">${String(index + 1).padStart(2, "0")}</span>
-        <div class="test-card-title">
-          <h3>${escapeHtml(category.name)}</h3>
-          <button class="test-help" type="button" aria-label="About ${escapeHtml(category.name)}: ${escapeHtml(category.description)}" data-tooltip="${escapeHtml(category.description)}">?</button>
-        </div>
-        <span class="test-card-count">${category.available ? `${category.test_count} test${category.test_count === 1 ? "" : "s"}` : "planned"}</span>
-      </div>
-      <button type="button" data-category="${escapeHtml(category.id)}" data-available="${category.available}">
-        ${category.available ? "Run tests →" : "Not implemented"}
-      </button>
-    </article>
-  `).join("");
-  document.querySelectorAll("button[data-category]").forEach((button) => {
-    button.addEventListener("click", () => startRun("category", [button.dataset.category]));
-  });
-  $("#toggle-tests").classList.toggle("hidden", state.catalog.categories.length <= 4);
-  $("#toggle-tests").textContent = state.showAllTests ? "Show fewer tests" : "Show more tests";
-  setControlsDisabled(Boolean(state.activeRunId));
+async function loadPresets() {
+  state.presets = await api("/api/presets");
+  renderPresetCards();
 }
 
-function renderTestPicker(filter = "") {
-  const query = filter.trim().toLowerCase();
-  const groups = new Map();
-  state.catalog.tests
-    .filter((test) => !query || `${test.name} ${test.category_name}`.toLowerCase().includes(query))
-    .forEach((test) => {
-      if (!groups.has(test.category_name)) groups.set(test.category_name, []);
-      groups.get(test.category_name).push(test);
+function availablePresetTests(key) {
+  if (key.startsWith("category:")) {
+    const categoryId = key.slice("category:".length);
+    return state.catalog.tests.filter((test) => test.category_id === categoryId).map((test) => test.nodeid);
+  }
+  const presetId = Number(key.slice("custom:".length));
+  return state.presets.find((preset) => preset.id === presetId)?.tests || [];
+}
+
+function renderPresetCards() {
+  const builtIn = state.catalog.categories.map((category) => ({
+    key: `category:${category.id}`,
+    name: category.name,
+    description: category.description,
+    accent: category.accent,
+    available: category.available,
+    testCount: category.test_count,
+    kind: "Built-in preset",
+  }));
+  const custom = state.presets.map((preset) => ({
+    key: `custom:${preset.id}`,
+    name: preset.name,
+    description: `Custom preset containing ${preset.tests.length} selected test${preset.tests.length === 1 ? "" : "s"}.`,
+    accent: "cyan",
+    available: true,
+    testCount: preset.tests.length,
+    kind: "Custom preset",
+  }));
+  const presets = [...builtIn, ...custom];
+  $("#test-grid").innerHTML = presets.map((preset, index) => {
+    const selected = state.selectedPresetIds.has(preset.key);
+    const count = preset.available ? `${preset.testCount} test${preset.testCount === 1 ? "" : "s"}` : "Planned";
+    return `
+      <button class="preset-card${selected ? " selected" : ""}" type="button" data-preset-key="${escapeHtml(preset.key)}" data-accent="${escapeHtml(preset.accent)}" aria-pressed="${selected}" ${preset.available ? "" : "disabled"}>
+        <span class="preset-index">${String(index + 1).padStart(2, "0")}</span>
+        <span class="preset-content"><strong>${escapeHtml(preset.name)}</strong><small>${escapeHtml(preset.kind)}</small></span>
+        <span class="preset-count">${count}</span>
+        <span class="preset-check" aria-hidden="true">${selected ? "✓" : "+"}</span>
+        <span class="sr-only">${escapeHtml(preset.description)}</span>
+      </button>`;
+  }).join("");
+  $("#test-grid").querySelectorAll("[data-preset-key]").forEach((card) => {
+    card.addEventListener("click", () => {
+      const key = card.dataset.presetKey;
+      if (state.selectedPresetIds.has(key)) state.selectedPresetIds.delete(key);
+      else state.selectedPresetIds.add(key);
+      renderPresetCards();
     });
-  $("#test-list").innerHTML = groups.size ? [...groups.entries()].map(([name, tests]) => `
-    <section class="test-group">
-      <h3>${escapeHtml(name)}</h3>
-      ${tests.map((test) => `
-        <label class="test-option">
-          <input type="checkbox" value="${escapeHtml(test.nodeid)}" ${state.selectedTests.has(test.nodeid) ? "checked" : ""}>
-          <span>${escapeHtml(test.name)}</span>
-        </label>
-      `).join("")}
-    </section>
-  `).join("") : '<p class="empty-cell">No tests match that search.</p>';
-  $("#test-list").querySelectorAll("input[type=checkbox]").forEach((input) => {
+  });
+  updatePresetControls();
+}
+
+function updatePresetControls() {
+  const count = state.selectedPresetIds.size;
+  $("#selected-preset-count").textContent = `${count} selected`;
+  $("#run-presets").disabled = state.controlsLocked || !state.benchReady || count === 0;
+}
+
+function renderIndividualTests() {
+  const tests = state.showAllIndividualTests ? state.catalog.tests : state.catalog.tests.slice(0, 10);
+  $("#individual-test-list").innerHTML = tests.length ? tests.map((test, index) => {
+    const selected = state.selectedTests.has(test.nodeid);
+    return `
+      <label class="individual-test${selected ? " selected" : ""}">
+        <span class="individual-test-index">${String(index + 1).padStart(2, "0")}</span>
+        <input type="checkbox" value="${escapeHtml(test.nodeid)}" ${selected ? "checked" : ""}>
+        <span class="individual-test-copy"><strong>${escapeHtml(test.name)}</strong><small>${escapeHtml(test.category_name)}</small></span>
+      </label>`;
+  }).join("") : '<p class="empty-cell">No individual tests were collected.</p>';
+  $("#individual-test-list").querySelectorAll("input[type=checkbox]").forEach((input) => {
     input.addEventListener("change", () => {
       if (input.checked) state.selectedTests.add(input.value);
       else state.selectedTests.delete(input.value);
-      updateSelectedCount();
+      renderIndividualTests();
     });
   });
-  updateSelectedCount();
+  $("#toggle-individual-tests").classList.toggle("hidden", state.catalog.tests.length <= 10);
+  $("#toggle-individual-tests").textContent = state.showAllIndividualTests ? "Show first 10" : "Show more tests";
+  updateIndividualControls();
 }
 
-function updateSelectedCount() {
+function updateIndividualControls() {
   $("#selected-count").textContent = state.selectedTests.size;
-  $("#run-selected").disabled = state.selectedTests.size === 0;
+  $("#run-selected").disabled = state.controlsLocked || !state.benchReady || state.selectedTests.size === 0;
+  $("#create-preset").disabled = state.selectedTests.size === 0;
+  $("#clear-tests").disabled = state.selectedTests.size === 0;
+}
+
+function runSelectedPresets() {
+  const tests = [...new Set([...state.selectedPresetIds].flatMap(availablePresetTests))];
+  if (!tests.length) return toast("Choose at least one available preset.", true);
+  startRun("tests", tests);
+}
+
+function openPresetDialog() {
+  if (!state.selectedTests.size) return;
+  $("#preset-name").value = "";
+  $("#preset-test-count").textContent = state.selectedTests.size;
+  $("#preset-dialog").showModal();
+  $("#preset-name").focus();
+}
+
+async function savePreset(event) {
+  event.preventDefault();
+  const name = $("#preset-name").value.trim();
+  if (!name) return;
+  const button = $("#save-preset");
+  button.disabled = true;
+  try {
+    const preset = await api("/api/presets", {
+      method: "POST",
+      body: JSON.stringify({ name, tests: [...state.selectedTests] }),
+    });
+    state.presets.push(preset);
+    state.selectedPresetIds.add(`custom:${preset.id}`);
+    $("#preset-dialog").close();
+    renderPresetCards();
+    toast(`Preset “${preset.name}” created.`);
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function loadBench() {
@@ -374,9 +446,10 @@ async function startRun(selectionType, selection) {
       method: "POST",
       body: JSON.stringify({ selection_type: selectionType, selection, capture_dut_logs: false }),
     });
-    $("#test-picker").close();
     state.selectedTests.clear();
-    renderTestPicker();
+    state.selectedPresetIds.clear();
+    renderIndividualTests();
+    renderPresetCards();
     connectRun(run.id);
     toast("Test run started.");
   } catch (error) {
@@ -513,16 +586,22 @@ async function showRunLogs(runId) {
 async function initialize() {
   try {
     await loadCatalog();
-    await Promise.all([loadBench(), loadSummary(), loadRuns(), loadAnalytics()]);
+    await Promise.all([loadPresets(), loadBench(), loadSummary(), loadRuns(), loadAnalytics()]);
   } catch (error) { toast(error.message, true); }
 }
 
 $("#run-all").addEventListener("click", () => startRun("all", []));
-$("#toggle-tests").addEventListener("click", () => { state.showAllTests = !state.showAllTests; renderTestCards(); });
-$("#open-picker").addEventListener("click", () => $("#test-picker").showModal());
-$("#test-search").addEventListener("input", (event) => renderTestPicker(event.target.value));
-$("#clear-tests").addEventListener("click", () => { state.selectedTests.clear(); renderTestPicker($("#test-search").value); });
+$("#run-presets").addEventListener("click", runSelectedPresets);
+$("#toggle-individual-tests").addEventListener("click", () => {
+  state.showAllIndividualTests = !state.showAllIndividualTests;
+  renderIndividualTests();
+});
+$("#clear-tests").addEventListener("click", () => { state.selectedTests.clear(); renderIndividualTests(); });
 $("#run-selected").addEventListener("click", () => startRun("tests", [...state.selectedTests]));
+$("#create-preset").addEventListener("click", openPresetDialog);
+$("#preset-form").addEventListener("submit", savePreset);
+$("#close-preset").addEventListener("click", () => $("#preset-dialog").close());
+$("#cancel-preset").addEventListener("click", () => $("#preset-dialog").close());
 $("#stop-run").addEventListener("click", stopActiveRun);
 $("#view-failed-tests").addEventListener("click", () => {
   if (state.lastCompletedRunId) showRunDetail(state.lastCompletedRunId, true);

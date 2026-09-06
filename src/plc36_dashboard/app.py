@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import ipaddress
 import json
+import sqlite3
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -58,6 +59,19 @@ class StartRunRequest(BaseModel):
             raise ValueError("Enter a valid IPv4 or IPv6 address.") from exc
 
 
+class CreatePresetRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    tests: list[str] = Field(min_length=1, max_length=200)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        name = value.strip()
+        if not name:
+            raise ValueError("Enter a preset name.")
+        return name
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     await asyncio.to_thread(runner.reconcile_existing_runs)
@@ -100,6 +114,30 @@ async def catalog() -> dict[str, Any]:
         "tests": tests,
         "collection_error": error,
     }
+
+
+@app.get("/api/presets")
+async def presets() -> list[dict[str, Any]]:
+    return await asyncio.to_thread(database.list_presets)
+
+
+@app.post("/api/presets", status_code=201)
+async def create_preset(payload: CreatePresetRequest) -> dict[str, Any]:
+    tests, error = await asyncio.to_thread(collect_tests, REPO_ROOT)
+    if error:
+        raise HTTPException(status_code=503, detail=f"Could not collect tests: {error}")
+    allowed = {str(test["nodeid"]) for test in tests}
+    requested = list(dict.fromkeys(payload.tests))
+    invalid = [nodeid for nodeid in requested if nodeid not in allowed]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Unknown test: {invalid[0]}")
+    try:
+        return await asyncio.to_thread(database.create_preset, payload.name, requested)
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="A preset with that name already exists.",
+        ) from exc
 
 
 def _probe_bench() -> dict[str, Any]:
