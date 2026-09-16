@@ -12,6 +12,9 @@ const state = {
   runs: [],
   analyticsPeriod: "current_week",
   controlsLocked: false,
+  summary: null,
+  latestCompletedRun: null,
+  latestRunDetail: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -108,14 +111,25 @@ function setControlsDisabled(disabled) {
   $("#run-all").disabled = disabled || !state.benchReady;
   updatePresetControls();
   updateIndividualControls();
+  if (state.latestCompletedRun) {
+    $("#rerun-failures").disabled = disabled || !state.benchReady || Number(state.latestCompletedRun.failed) === 0;
+  }
 }
 
 async function loadCatalog() {
   const catalog = await api("/api/catalog");
   state.catalog = catalog;
+  updateAvailableTests();
   renderPresetCards();
   renderIndividualTests();
   if (catalog.collection_error) toast(`Test collection warning: ${catalog.collection_error}`, true);
+}
+
+function updateAvailableTests() {
+  const count = state.catalog.tests.length;
+  const averageSeconds = Number(state.summary?.average_duration_s) || 0;
+  const estimate = averageSeconds ? ` · typical run ${formatTotalDuration(averageSeconds)}` : "";
+  $("#available-test-count").textContent = `${count} test${count === 1 ? "" : "s"} available${estimate}`;
 }
 
 async function loadPresets() {
@@ -258,17 +272,23 @@ async function loadBench() {
     const hatActive = devicesInActiveRun || Boolean(bench.hat.online);
     $("#dut-light").className = `device-status-light ${dutActive ? "online" : "offline"}`;
     $("#hat-light").className = `device-status-light ${hatActive ? "online" : "offline"}`;
+    $("#bench-light").className = `status-square ${bench.ready ? "online" : reserved ? "reserved" : "offline"}`;
     $("#bench-status").textContent = reserved ? "Bench reserved" : bench.ready ? "Bench ready" : "Bench unavailable";
+    $("#bench-state").textContent = reserved ? "Reserved" : bench.ready ? "Ready" : "Unavailable";
     const dutState = bench.dut.state || "Online";
     $("#dut-state").textContent = reserved ? "Reserved by test run" : bench.dut.online ? `${dutState.charAt(0).toUpperCase()}${dutState.slice(1)}` : "Offline";
     $("#hat-state").textContent = reserved ? "Reserved by test run" : bench.hat.online ? "Connected" : "Offline";
+    $("#bench-checked-at").textContent = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
     if (bench.active_run_id && !state.activeRunId) connectRun(bench.active_run_id);
     setControlsDisabled(reserved || !bench.ready);
   } catch (error) {
     state.benchReady = false;
     $("#dut-light").className = "device-status-light offline";
     $("#hat-light").className = "device-status-light offline";
+    $("#bench-light").className = "status-square offline";
     $("#bench-status").textContent = "Status unavailable";
+    $("#bench-state").textContent = "Unknown";
+    $("#bench-checked-at").textContent = "Check failed";
     setControlsDisabled(true);
     toast(error.message, true);
   }
@@ -276,11 +296,9 @@ async function loadBench() {
 
 async function loadSummary() {
   const summary = await api("/api/summary");
-  $("#completed-tests").textContent = summary.completed_tests;
-  $("#total-execution-time").textContent = formatTotalDuration(summary.total_execution_time_s);
-  $("#passed-percent").textContent = formatPercent(summary.passed_percent);
-  $("#failed-percent").textContent = formatPercent(summary.failed_percent);
-  $("#skipped-percent").textContent = formatPercent(summary.skipped_percent);
+  state.summary = summary;
+  updateAvailableTests();
+  renderHealthOverview();
   renderHardwareMetrics(summary.latest_metrics || []);
 }
 
@@ -288,25 +306,87 @@ function renderHardwareMetrics(metrics) {
   const findMetric = (name, label, value) => metrics.find((metric) => (
     metric.name === name && String(metric.labels?.[label]) === String(value)
   ));
-  const value = (metric, digits) => metric
-    ? `${Number(metric.value).toFixed(digits)} ${escapeHtml(metric.unit)}`
-    : "—";
-  const measurement = (label, metric, digits) => `
-    <div class="measurement-row"><span>${label}</span><strong>${value(metric, digits)}</strong></div>`;
-  const sensorCards = [1, 2].map((sensor) => `
-    <article class="hardware-metric-group sensor-metric-group">
-      <h4>Sensor ${sensor}</h4>
-      ${measurement("Mean temperature", findMetric("temperature_mean", "sensor", sensor), 2)}
-      ${measurement("Temperature spread", findMetric("temperature_spread", "sensor", sensor), 3)}
-    </article>`);
-  const outputCards = ["O1", "O2", "O3", "O4"].map((channel) => `
-    <article class="hardware-metric-group output-metric-group">
-      <h4>${channel}</h4>
-      ${measurement("Maximum error", findMetric("calibrated_max_error", "channel", channel), 4)}
-      ${measurement("Calibrated MAE", findMetric("calibrated_mae", "channel", channel), 4)}
-      ${measurement("Raw MAE", findMetric("raw_mae", "channel", channel), 4)}
-    </article>`);
-  $("#hardware-metrics").innerHTML = [...sensorCards, ...outputCards].join("");
+  const value = (metric, digits) => metric ? `${Number(metric.value).toFixed(digits)} ${escapeHtml(metric.unit)}` : "—";
+  const recorded = (metric) => metric ? `${formatDate(metric.created_at)} · ${escapeHtml(metric.run_id.slice(0, 8))}` : "—";
+  const rows = [];
+  [1, 2].forEach((sensor) => {
+    const mean = findMetric("temperature_mean", "sensor", sensor);
+    const spread = findMetric("temperature_spread", "sensor", sensor);
+    if (!mean && !spread) return;
+    rows.push(`<tr><th scope="row">Sensor ${sensor}</th><td>Mean temperature</td><td><strong>${value(mean, 2)}</strong></td><td>Spread ${value(spread, 3)} · informational</td><td>${recorded(mean || spread)}</td></tr>`);
+  });
+  ["O1", "O2", "O3", "O4"].forEach((channel) => {
+    const maximum = findMetric("calibrated_max_error", "channel", channel);
+    const calibrated = findMetric("calibrated_mae", "channel", channel);
+    const raw = findMetric("raw_mae", "channel", channel);
+    if (!maximum && !calibrated && !raw) return;
+    rows.push(`<tr><th scope="row">${channel}</th><td>Maximum calibrated error</td><td><strong>${value(maximum, 4)}</strong></td><td>Cal. MAE ${value(calibrated, 4)} · Raw MAE ${value(raw, 4)}</td><td>${recorded(maximum || calibrated || raw)}</td></tr>`);
+  });
+  $("#hardware-metrics").innerHTML = rows.length
+    ? rows.join("")
+    : '<tr><td colspan="5" class="empty-cell">Measurements will appear after an accuracy or 1-Wire run.</td></tr>';
+}
+
+function latestCompletedRun() {
+  return state.runs.find((run) => !["queued", "running", "stopping"].includes(run.status)) || null;
+}
+
+function renderHealthOverview() {
+  const run = latestCompletedRun();
+  state.latestCompletedRun = run;
+  if (!run) {
+    $("#latest-run-heading").textContent = "No completed run yet";
+    $("#latest-run-meta").textContent = "Run tests to establish the current PLC-36 health baseline.";
+    ["#latest-run-details", "#rerun-failures", "#view-latest-failures"].forEach((selector) => { $(selector).disabled = true; });
+    renderAttention([]);
+    return;
+  }
+  const completed = Number(run.passed) + Number(run.failed) + Number(run.skipped);
+  const percent = (count) => completed ? (Number(count) / completed) * 100 : 0;
+  $("#latest-run-heading").textContent = `${shortSelection(run)} · ${String(run.status).replaceAll("_", " ")}`;
+  $("#latest-run-meta").textContent = `Run ${run.id.slice(0, 8)} · ${formatDate(run.finished_at || run.created_at)} · revision ${run.git_sha?.slice(0, 8) || "unknown"}`;
+  $("#completed-tests").textContent = completed;
+  $("#total-execution-time").textContent = formatTotalDuration(run.duration_s);
+  $("#passed-percent").textContent = formatPercent(percent(run.passed));
+  $("#failed-percent").textContent = formatPercent(percent(run.failed));
+  $("#skipped-percent").textContent = formatPercent(percent(run.skipped));
+  $("#latest-run-details").disabled = false;
+  $("#rerun-failures").disabled = Number(run.failed) === 0 || Boolean(state.activeRunId) || !state.benchReady;
+  $("#view-latest-failures").disabled = Number(run.failed) === 0;
+  const allPassing = state.runs.find((item) => item.selection_type === "all" && item.status === "passed" && Number(item.failed) === 0);
+  $("#last-all-passing").textContent = allPassing
+    ? `Last all-passing full run: ${formatDate(allPassing.finished_at || allPassing.created_at)} · ${allPassing.id.slice(0, 8)}`
+    : "Last all-passing full run: none recorded";
+  loadLatestRunDetail(run);
+}
+
+async function loadLatestRunDetail(run) {
+  if (state.latestRunDetail?.id === run.id) {
+    renderAttention(state.latestRunDetail.tests || []);
+    return;
+  }
+  try {
+    state.latestRunDetail = await api(`/api/runs/${encodeURIComponent(run.id)}`);
+    if (state.latestCompletedRun?.id === run.id) renderAttention(state.latestRunDetail.tests || []);
+  } catch (_) {
+    renderAttention([]);
+  }
+}
+
+function renderAttention(tests) {
+  const failed = tests.filter((test) => test.outcome === "failed");
+  if (!state.latestCompletedRun) {
+    $("#attention-list").innerHTML = '<p class="empty-state">No test history is available yet.</p>';
+    return;
+  }
+  if (!failed.length) {
+    $("#attention-list").innerHTML = '<p class="empty-state success">No failures in the latest completed run.</p>';
+    return;
+  }
+  $("#attention-list").innerHTML = failed.slice(0, 4).map((test) => {
+    const error = String(test.error || "").split("\n").find(Boolean) || "Open run details for the recorded assertion.";
+    return `<article class="attention-item"><span class="attention-marker" aria-hidden="true"></span><div><strong>${escapeHtml(test.display_name || friendlyTestName(test.nodeid))}</strong><p>${escapeHtml(error)}</p><small>Current failure · ${Number(test.duration_s || 0).toFixed(2)} s</small></div></article>`;
+  }).join("") + (failed.length > 4 ? `<p class="attention-more">+${failed.length - 4} more in this run</p>` : "");
 }
 
 function isoDate(date) {
@@ -348,11 +428,12 @@ function renderDailyChart(series) {
   const bottom = 42;
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
-  const largest = Math.max(0, ...series.flatMap((day) => [day.passed, day.failed, day.skipped]));
+  const largest = Math.max(0, ...series.map((day) => day.passed + day.failed + day.skipped));
   const maxValue = Math.max(5, Math.ceil(largest / 5) * 5);
-  const x = (index) => left + (series.length === 1 ? plotWidth / 2 : (index / (series.length - 1)) * plotWidth);
   const y = (value) => top + plotHeight - (value / maxValue) * plotHeight;
-  const pathFor = (key) => series.map((day, index) => `${index ? "L" : "M"}${x(index).toFixed(2)},${y(day[key]).toFixed(2)}`).join(" ");
+  const slot = plotWidth / Math.max(1, series.length);
+  const barWidth = Math.max(2, Math.min(38, slot * .56));
+  const x = (index) => left + index * slot + (slot - barWidth) / 2;
   const tickCount = 5;
   const grid = Array.from({ length: tickCount + 1 }, (_, index) => {
     const value = (maxValue / tickCount) * index;
@@ -361,15 +442,22 @@ function renderDailyChart(series) {
   }).join("");
   const labelCount = Math.min(7, series.length);
   const labelIndexes = [...new Set(Array.from({ length: labelCount }, (_, index) => Math.round(index * (series.length - 1) / Math.max(1, labelCount - 1))))];
-  const labels = labelIndexes.map((index) => `<text x="${x(index)}" y="${height - 10}" class="chart-axis-label" text-anchor="middle">${escapeHtml(chartDateLabel(series[index].date))}</text>`).join("");
-  const points = series.length <= 31 ? ["passed", "failed", "skipped"].map((key) => series.map((day, index) => `<circle cx="${x(index)}" cy="${y(day[key])}" r="3" class="chart-point ${key}"><title>${escapeHtml(`${chartDateLabel(day.date)}: ${day[key]} ${key}`)}</title></circle>`).join("")).join("") : "";
+  const labels = labelIndexes.map((index) => `<text x="${x(index) + barWidth / 2}" y="${height - 10}" class="chart-axis-label" text-anchor="middle">${escapeHtml(chartDateLabel(series[index].date))}</text>`).join("");
+  const bars = series.map((day, index) => {
+    const total = day.passed + day.failed + day.skipped;
+    let accumulated = 0;
+    const segments = ["passed", "failed", "skipped"].map((key) => {
+      const segmentHeight = (day[key] / maxValue) * plotHeight;
+      accumulated += segmentHeight;
+      return `<rect x="${x(index)}" y="${top + plotHeight - accumulated}" width="${barWidth}" height="${segmentHeight}" class="chart-bar ${key}"></rect>`;
+    }).join("");
+    const totalLabel = total && series.length <= 31 ? `<text x="${x(index) + barWidth / 2}" y="${Math.max(11, y(total) - 6)}" class="chart-total" text-anchor="middle">${total}</text>` : "";
+    const accessible = `${chartDateLabel(day.date)}: ${total} cases, ${day.passed} passed, ${day.failed} failed, ${day.skipped} skipped`;
+    return `<g tabindex="0" aria-label="${escapeHtml(accessible)}"><title>${escapeHtml(accessible)}</title>${segments}${totalLabel}</g>`;
+  }).join("");
 
   $("#daily-chart").innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily passed, failed, and skipped test cases">
-    ${grid}${labels}
-    <path d="${pathFor("passed")}" class="chart-line passed"></path>
-    <path d="${pathFor("failed")}" class="chart-line failed"></path>
-    <path d="${pathFor("skipped")}" class="chart-line skipped"></path>
-    ${points}
+    ${grid}${labels}${bars}
   </svg>`;
 }
 
@@ -434,8 +522,22 @@ function renderRuns() {
 async function loadRuns() {
   state.runs = await api("/api/runs?limit=200");
   renderRuns();
+  renderHealthOverview();
   const active = state.runs.find((run) => ["queued", "running", "stopping"].includes(run.status));
   if (active && !state.activeRunId) connectRun(active.id);
+}
+
+async function rerunLatestFailures() {
+  const run = state.latestCompletedRun;
+  if (!run) return;
+  try {
+    const detail = state.latestRunDetail?.id === run.id
+      ? state.latestRunDetail
+      : await api(`/api/runs/${encodeURIComponent(run.id)}`);
+    const failures = (detail.tests || []).filter((test) => test.outcome === "failed").map((test) => test.nodeid);
+    if (!failures.length) return toast("No failed tests are available to rerun.", true);
+    await startRun("tests", failures);
+  } catch (error) { toast(error.message, true); }
 }
 
 async function startRun(selectionType, selection) {
@@ -591,6 +693,10 @@ async function initialize() {
 }
 
 $("#run-all").addEventListener("click", () => startRun("all", []));
+$("#choose-tests").addEventListener("click", () => activateTab("tests", true));
+$("#latest-run-details").addEventListener("click", () => { if (state.latestCompletedRun) showRunDetail(state.latestCompletedRun.id); });
+$("#view-latest-failures").addEventListener("click", () => { if (state.latestCompletedRun) showRunDetail(state.latestCompletedRun.id, true); });
+$("#rerun-failures").addEventListener("click", rerunLatestFailures);
 $("#run-presets").addEventListener("click", runSelectedPresets);
 $("#toggle-individual-tests").addEventListener("click", () => {
   state.showAllIndividualTests = !state.showAllIndividualTests;
