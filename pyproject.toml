@@ -32,7 +32,16 @@ where = ["src"]
 plc36_dashboard = ["templates/*.html", "static/*.css", "static/*.js"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = [
+    "tests/0V_10V_outputs",
+    "tests/1_wire_interface",
+    "tests/4mA_20mA_inputs",
+    "tests/direct_digital_analog_inputs",
+    "tests/dut_log_capture",
+    "tests/isolated_outputs",
+    "tests/opto_isolated_inputs",
+    "tests/rs485",
+]
 pythonpath = ["src"]
 log_cli = false
 log_level = "WARNING"
