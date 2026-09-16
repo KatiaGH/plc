@@ -5,11 +5,12 @@ from pathlib import Path
 from plc36_dashboard.catalog import CATEGORIES, collect_tests, friendly_test_name
 
 
-def test_catalog_marks_placeholder_tests_unavailable() -> None:
+def test_catalog_marks_disabled_tests_unavailable() -> None:
     states = {category.id: category.available for category in CATEGORIES}
     assert states["rs485"] is False
     assert states["current_loop"] is False
-    assert states["onewire"] is True
+    assert states["onewire"] is False
+    assert states["output_accuracy"] is False
 
 
 def test_pytest_collection_returns_individual_nodeids() -> None:
@@ -19,7 +20,10 @@ def test_pytest_collection_returns_individual_nodeids() -> None:
     assert error is None
     assert tests
     assert all("::" in item["nodeid"] for item in tests)
-    assert any(item["category_id"] == "onewire" for item in tests)
+    assert any(item["category_id"] == "voltage_outputs" for item in tests)
+    assert not any(
+        item["category_id"] in {"onewire", "output_accuracy"} for item in tests
+    )
     assert all("::" not in item["name"] for item in tests)
 
 

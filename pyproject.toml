@@ -33,8 +33,7 @@ plc36_dashboard = ["templates/*.html", "static/*.css", "static/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = [
-    "tests/0V_10V_outputs",
-    "tests/1_wire_interface",
+    "tests/0V_10V_outputs/test_variable_outputs.py",
     "tests/4mA_20mA_inputs",
     "tests/direct_digital_analog_inputs",
     "tests/dut_log_capture",

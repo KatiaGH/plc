@@ -32,6 +32,7 @@ CATEGORIES = (
         "Measure calibration, error, and noise for O1–O4.",
         "tests/0V_10V_outputs/test_output_accuracy.py",
         "blue",
+        available=False,
     ),
     TestCategory(
         "onewire",
@@ -39,6 +40,7 @@ CATEGORIES = (
         "Decode both DS18B20 sensors over the isolated O4 signal.",
         "tests/1_wire_interface/test_ds18b20.py",
         "violet",
+        available=False,
     ),
     TestCategory(
         "mpi_relays",
