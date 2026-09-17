@@ -53,9 +53,31 @@ function toast(message, isError = false) {
 
 function formatDate(value) {
   if (!value) return "—";
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Europe/Sofia",
+    timeZoneName: "short",
   }).format(new Date(value));
+}
+
+function formatCheckedTime(value = new Date()) {
+  return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: "Europe/Sofia",
+    timeZoneName: "short",
+  }).format(value);
+}
+
+function shortRunId(runId) {
+  return String(runId || "unknown").slice(0, 8);
 }
 
 function formatTotalDuration(value) {
@@ -279,7 +301,7 @@ async function loadBench() {
     const dutState = bench.dut.state || "Online";
     $("#dut-state").textContent = reserved ? "Reserved by test run" : bench.dut.online ? `${dutState.charAt(0).toUpperCase()}${dutState.slice(1)}` : "Offline";
     $("#hat-state").textContent = reserved ? "Reserved by test run" : bench.hat.online ? "Connected" : "Offline";
-    $("#bench-checked-at").textContent = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
+    $("#bench-checked-at").textContent = formatCheckedTime();
     if (bench.active_run_id && !state.activeRunId) connectRun(bench.active_run_id);
     setControlsDisabled(reserved || !bench.ready);
   } catch (error) {
@@ -341,7 +363,7 @@ function renderHardwareMetrics(metrics) {
   state.latestMeasurementRunId = sourceMetrics[0]?.run_id || null;
   const sourceRuns = new Set(sourceMetrics.map((metric) => metric.run_id).filter(Boolean));
   $("#measurement-source").textContent = sourceRuns.size === 1
-    ? `Run ${String([...sourceRuns][0]).slice(0, 8)}`
+    ? `Run ID ${shortRunId([...sourceRuns][0])}`
     : sourceRuns.size > 1 ? "Latest valid value per channel" : "No measurement source available";
   $("#view-measurement-details").disabled = !state.latestMeasurementRunId;
   $("#hardware-metrics").innerHTML = rows.length
@@ -361,8 +383,10 @@ function renderHealthOverview() {
     $("#latest-run-meta").textContent = "No completed run yet";
     $("#completed-tests").textContent = "0";
     $("#total-execution-time").textContent = "0s";
-    $("#passed-percent").textContent = "0 passed";
-    $("#failed-percent").textContent = "0 failed";
+    $("#passed-count-summary").textContent = "0";
+    $("#failed-count-summary").textContent = "0";
+    $("#passed-percent").textContent = "0%";
+    $("#failed-percent").textContent = "0%";
     $("#skipped-percent").textContent = "0%";
     $("#run-outcome-detail").textContent = "No result details";
     ["#latest-run-details", "#rerun-failures", "#view-latest-failures"].forEach((selector) => { $(selector).disabled = true; });
@@ -371,12 +395,18 @@ function renderHealthOverview() {
   }
   const completed = Number(run.passed) + Number(run.failed) + Number(run.skipped);
   const percent = (count) => completed ? (Number(count) / completed) * 100 : 0;
+  const currentCatalogCount = state.catalog.tests.length;
+  const catalogContext = completed !== currentCatalogCount
+    ? ` · ${completed} tests at run time / ${currentCatalogCount} currently available`
+    : "";
   $("#latest-run-heading").textContent = "Latest completed run";
-  $("#latest-run-meta").textContent = `Run ${run.id.slice(0, 8)} · ${shortSelection(run)} · ${formatDate(run.finished_at || run.created_at)}`;
+  $("#latest-run-meta").textContent = `Run ID ${shortRunId(run.id)} · ${shortSelection(run)} · ${formatDate(run.finished_at || run.created_at)}${catalogContext}`;
   $("#completed-tests").textContent = completed;
   $("#total-execution-time").textContent = formatTotalDuration(run.duration_s);
-  $("#passed-percent").textContent = `${run.passed} passed  ${formatPercent(percent(run.passed))}`;
-  $("#failed-percent").textContent = `${run.failed} failed  ${formatPercent(percent(run.failed))}`;
+  $("#passed-count-summary").textContent = run.passed;
+  $("#failed-count-summary").textContent = run.failed;
+  $("#passed-percent").textContent = formatPercent(percent(run.passed));
+  $("#failed-percent").textContent = formatPercent(percent(run.failed));
   $("#skipped-percent").textContent = formatPercent(percent(run.skipped));
   const frameworkErrors = Math.max(0, Number(run.total || completed) - completed);
   const detailParts = [`${run.failed} test failure${Number(run.failed) === 1 ? "" : "s"}`];
@@ -388,7 +418,7 @@ function renderHealthOverview() {
   $("#view-latest-failures").disabled = Number(run.failed) === 0;
   const allPassing = state.runs.find((item) => item.selection_type === "all" && item.status === "passed" && Number(item.failed) === 0);
   $("#last-all-passing").textContent = allPassing
-    ? `Last all-passing full run: ${formatDate(allPassing.finished_at || allPassing.created_at)} · ${allPassing.id.slice(0, 8)}`
+    ? `Last all-passing full run: ${formatDate(allPassing.finished_at || allPassing.created_at)} · ID ${shortRunId(allPassing.id)}`
     : "Last all-passing full run: none recorded";
   loadLatestRunDetail(run);
 }
@@ -415,12 +445,15 @@ function renderAttention(tests) {
     ? `${gapCount} coverage gap${gapCount === 1 ? "" : "s"} →`
     : "View failures and errors →";
   if (!state.latestCompletedRun) {
-    $("#attention-list").innerHTML = '<p class="empty-state">No test history is available yet.</p>';
+    $("#attention-list").innerHTML = '<div class="attention-empty"><span class="attention-empty-icon" aria-hidden="true">–</span><div><strong>No run history</strong><p>Complete a test run to establish the current bench health.</p></div></div>';
     attentionAction.disabled = !gapCount;
     return;
   }
   if (!failed.length) {
-    $("#attention-list").innerHTML = '<p class="empty-state success">No failures in the latest completed run.</p>';
+    const coverage = gapCount
+      ? `<div class="coverage-summary"><strong>${gapCount} coverage gap${gapCount === 1 ? "" : "s"}</strong> · unavailable test areas do not affect this pass result.</div>`
+      : "";
+    $("#attention-list").innerHTML = `<div class="attention-empty"><span class="attention-empty-icon" aria-hidden="true">✓</span><div><strong>All tests passed</strong><p>No failures in the latest completed run.</p></div></div>${coverage}`;
     attentionAction.disabled = !gapCount;
     return;
   }
@@ -473,6 +506,14 @@ function chartDateParts(value) {
 }
 
 function renderDailyChart(series) {
+  const totalCases = series.reduce((sum, day) => sum + day.passed + day.failed + day.skipped, 0);
+  const chart = $("#daily-chart");
+  if (!totalCases) {
+    chart.classList.add("empty");
+    chart.innerHTML = '<div class="chart-empty-state"><strong>No comparable full runs</strong><span>No complete “Run all tests” execution was recorded in the selected period.</span></div>';
+    return;
+  }
+  chart.classList.remove("empty");
   const width = 760;
   const height = 205;
   const left = 52;
@@ -514,7 +555,7 @@ function renderDailyChart(series) {
     return `<g tabindex="0" aria-label="${escapeHtml(accessible)}"><title>${escapeHtml(accessible)}</title>${segments}${totalLabel}</g>`;
   }).join("");
 
-  $("#daily-chart").innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily passed, failed, and skipped test cases">
+  chart.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily passed, failed, and skipped test cases">
     <text x="14" y="${top + plotHeight / 2}" class="chart-axis-title" text-anchor="middle" transform="rotate(-90 14 ${top + plotHeight / 2})">Number of test cases</text>
     ${grid}${labels}${bars}
   </svg>`;
