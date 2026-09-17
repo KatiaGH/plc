@@ -6,11 +6,11 @@ from plc36_dashboard.app import app
 def test_dashboard_and_assets_are_not_cached() -> None:
     with TestClient(app) as client:
         dashboard = client.get("/")
-        javascript = client.get("/static/app.js?v=11")
+        javascript = client.get("/static/app.js?v=13")
 
     assert dashboard.status_code == 200
     assert dashboard.headers["cache-control"] == "no-store, max-age=0"
-    assert '/static/app.js?v=11' in dashboard.text
+    assert '/static/app.js?v=13' in dashboard.text
     assert ">Current week</option>" in dashboard.text
     assert ">Last week</option>" in dashboard.text
     assert 'id="tab-health"' in dashboard.text
