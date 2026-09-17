@@ -18,7 +18,7 @@ def test_database_records_results_and_metrics(tmp_path: Path) -> None:
 
     database.create_run(
         run_id="run-1",
-        selection_type="tests",
+        selection_type="all",
         selection=["tests/example.py::test_signal"],
         git_sha="abc1234",
         dut_ip="192.168.10.247",
@@ -78,3 +78,35 @@ def test_database_records_results_and_metrics(tmp_path: Path) -> None:
     last_week_end = date.fromisoformat(last_week["end_date"])
     assert last_week_start.weekday() == 0
     assert last_week_end == last_week_start + timedelta(days=6)
+
+
+def test_history_uses_only_latest_full_run_per_day(tmp_path: Path) -> None:
+    database = DashboardDatabase(tmp_path / "dashboard.sqlite3")
+
+    for run_id, outcome in (("full-run-1", "passed"), ("full-run-2", "failed")):
+        database.create_run(
+            run_id=run_id,
+            selection_type="all",
+            selection=[],
+            git_sha="abc1234",
+            dut_ip="192.168.10.247",
+            capture_dut_logs=False,
+        )
+        database.mark_running(run_id)
+        database.set_total(run_id, 1)
+        database.upsert_result(
+            run_id=run_id,
+            nodeid="tests/example.py::test_signal",
+            outcome=outcome,
+            duration_s=1.0,
+            error="failed" if outcome == "failed" else None,
+        )
+        database.finish_run(
+            run_id,
+            status=outcome,
+            exit_code=0 if outcome == "passed" else 1,
+        )
+
+    analytics = database.test_case_history("current_week")
+    assert analytics["daily"][-1]["passed"] == 0
+    assert analytics["daily"][-1]["failed"] == 1
