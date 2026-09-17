@@ -66,10 +66,9 @@ CATEGORIES = (
     TestCategory(
         "current_loop",
         "4–20 mA inputs",
-        "Reserved for the current-loop implementation.",
+        "Validate LP1 at 4–20 mA using O1 and the external loop relay.",
         "tests/4mA_20mA_inputs/test_current_loop.py",
         "slate",
-        available=False,
     ),
     TestCategory(
         "rs485",
@@ -123,6 +122,9 @@ def friendly_test_name(nodeid: str) -> str:
         return f"{outputs} shared isolated output"
     if base == "test_ii1_ii8_change_together":
         return "Isolated inputs II1–II8"
+    if base == "test_lp1_current_loop_driven_by_o1":
+        suffix = f" at {parameter}" if parameter else ""
+        return f"LP1 current loop driven by O1{suffix}"
 
     words = base.removeprefix("test_").replace("_", " ")
     if parameter:

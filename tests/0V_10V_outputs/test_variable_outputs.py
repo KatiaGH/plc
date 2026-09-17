@@ -134,61 +134,6 @@ def _restore_tested_output(
     time.sleep(INTER_TEST_DELAY_S)
 
 
-# @pytest.mark.parametrize("percentage", PERCENTAGE_SETPOINTS)
-# def test_variable_output_matches_hat_uin(
-#     dut: DutRpcClient,
-#     hat: HatClient,
-#     bench: BenchConfig,
-#     channel,
-#     hat_in: int,
-#     percentage: float,
-# ) -> None:
-#     """Verify one output and restore it to 0% after the test."""
-#     expected_volts = percentage_to_volts(percentage)
-
-#     try:
-#         initial_percentage = _get_output_percentage(dut, channel)
-
-#         assert initial_percentage == pytest.approx(
-#             SAFE_OUTPUT_PERCENTAGE
-#         ), (
-#             f"{channel.name} was not initially at 0%: "
-#             f"{initial_percentage}%"
-#         )
-
-#         _set_output_and_wait(
-#             dut,
-#             bench,
-#             channel,
-#             percentage,
-#         )
-
-#         measured_volts = hat.read_uin(hat_in)
-#         reported_percentage = _get_output_percentage(dut, channel)
-
-#         assert reported_percentage == pytest.approx(
-#             percentage,
-#             abs=1
-#         ), (
-#             f"{channel.name} reported {reported_percentage}%, "
-#             f"expected {percentage}%"
-#         )
-
-#         assert measured_volts == pytest.approx(
-#                     expected_volts,
-#                     abs=bench.tolerances.voltage_v,
-#                 ), (
-#                     f"Measured voltage: {measured_volts} V; "
-#                     f"expected voltage: {expected_volts} V; "
-#                     f"PLC reported output: {reported_percentage}%"
-#                 )
-
-#     finally:
-#         _restore_tested_output(
-#             dut,
-#             bench,
-#             channel,
-#         )
 @pytest.mark.hardware
 @pytest.mark.analog
 @pytest.mark.needs_host_control

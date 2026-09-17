@@ -8,7 +8,7 @@ from plc36_dashboard.catalog import CATEGORIES, collect_tests, friendly_test_nam
 def test_catalog_marks_disabled_tests_unavailable() -> None:
     states = {category.id: category.available for category in CATEGORIES}
     assert states["rs485"] is False
-    assert states["current_loop"] is False
+    assert states["current_loop"] is True
     assert states["onewire"] is False
     assert states["output_accuracy"] is False
 
@@ -21,6 +21,7 @@ def test_pytest_collection_returns_individual_nodeids() -> None:
     assert tests
     assert all("::" in item["nodeid"] for item in tests)
     assert any(item["category_id"] == "voltage_outputs" for item in tests)
+    assert any(item["category_id"] == "current_loop" for item in tests)
     assert not any(
         item["category_id"] in {"onewire", "output_accuracy"} for item in tests
     )

@@ -17,6 +17,13 @@ class DutConfig:
 
 
 @dataclass(frozen=True)
+class RelayConfig:
+    ip: str
+    rpc_timeout_s: float
+    switch_id: int
+
+
+@dataclass(frozen=True)
 class HatConfig:
     stack: int
     host_ip: str
@@ -39,6 +46,7 @@ class OneWireConfig:
 @dataclass(frozen=True)
 class BenchConfig:
     dut: DutConfig
+    relay: RelayConfig
     hat: HatConfig
     tolerances: Tolerances
     onewire: OneWireConfig
@@ -63,6 +71,11 @@ def load_bench(path: Path | None = None, *, dut_ip: str | None = None, hat_stack
         dut=DutConfig(
             ip=str(dut_ip or _require(raw, "dut", "ip")),
             rpc_timeout_s=float(_require(raw, "dut", "rpc_timeout_s")),
+        ),
+        relay=RelayConfig(
+            ip=str(_require(raw, "relay", "ip")),
+            rpc_timeout_s=float(_require(raw, "relay", "rpc_timeout_s")),
+            switch_id=int(_require(raw, "relay", "switch_id")),
         ),
         hat=HatConfig(
             stack=int(hat_stack if hat_stack is not None else _require(raw, "hat", "stack")),

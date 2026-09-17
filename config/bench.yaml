@@ -1,11 +1,15 @@
 dut:
-  ip: 192.168.10.247
+  ip: 192.168.10.146
   rpc_timeout_s: 10
+relay:
+  ip: 192.168.10.51
+  rpc_timeout_s: 10
+  switch_id: 0
 hat:
   stack: 0
   host_ip: 192.168.10.69
 tolerances:
-  voltage_v: 0.6 #double and give it to the next person
+  voltage_v: 0.8 #double and give it to the next person v.2
   mpi_high_v: 3.0
   settle_s: 1
 onewire:

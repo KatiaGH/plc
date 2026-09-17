@@ -24,7 +24,7 @@ pytest tests/0V_10V_outputs/test_variable_outputs.py \
   -k "volts==5"
 ```
 
-Without a HAT or DUT, hardware tests skip. `tests/4mA_20mA_inputs/` and `tests/rs485/` are skipped placeholders.
+Without the required bench hardware, hardware tests skip. `tests/rs485/` is a skipped placeholder.
 
 ## Test dashboard
 

@@ -70,6 +70,12 @@ class DutRpcClient:
     def boolean_get_status(self, cid: int) -> bool:
         return bool(self.call("Boolean.GetStatus", {"id": cid})["value"])
 
+    def switch_set(self, switch_id: int, enabled: bool) -> None:
+        self.call("Switch.Set", {"id": switch_id, "on": enabled})
+
+    def switch_get_status(self, switch_id: int) -> bool:
+        return bool(self.call("Switch.GetStatus", {"id": switch_id})["output"])
+
     def plc_get_status(self, cid: int = 0) -> dict[str, Any]:
         return self.call("PLC.GetStatus", {"id": cid})
 
