@@ -502,10 +502,15 @@ class DashboardDatabase:
             latest_metrics = []
             for row in db.execute(
                 """
-                SELECT m.name, m.value, m.unit, m.labels_json, m.run_id, m.created_at
+                SELECT
+                    m.name, m.value, m.unit, m.labels_json, m.run_id,
+                    m.nodeid, m.created_at, tr.outcome
                 FROM metrics AS m
+                LEFT JOIN test_results AS tr
+                    ON tr.run_id = m.run_id AND tr.nodeid = m.nodeid
                 WHERE m.name IN (
                     'temperature_mean', 'temperature_spread',
+                    'measured_voltage', 'accuracy_measured_voltage',
                     'raw_mae', 'calibrated_mae', 'calibrated_max_error'
                 )
                 AND m.id IN (
@@ -513,7 +518,7 @@ class DashboardDatabase:
                     GROUP BY name, labels_json
                 )
                 ORDER BY m.id DESC
-                LIMIT 20
+                LIMIT 80
                 """
             ):
                 metric = dict(row)
