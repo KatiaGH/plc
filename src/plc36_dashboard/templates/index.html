@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Run and monitor PLC-36 hardware tests.">
-  <title>PLC-36 Test Bench</title>
-  <link rel="stylesheet" href="/static/app.css?v=13">
+  <title>PLC-36 Test Dashboard</title>
+  <link rel="stylesheet" href="/static/app.css?v=14">
 </head>
 <body>
   <div class="shell">
@@ -60,8 +60,8 @@
           <div class="run-summary-grid">
             <div><strong id="completed-tests">0</strong><span>completed</span></div>
             <div><strong id="total-execution-time">0s</strong></div>
-            <div class="passed"><strong id="passed-percent">0 passed</strong></div>
-            <div class="failed"><strong id="failed-percent">0 failed</strong></div>
+            <div class="passed summary-result"><strong id="passed-count-summary">0</strong><span>passed</span><strong class="summary-rate" id="passed-percent">0%</strong></div>
+            <div class="failed summary-result"><strong id="failed-count-summary">0</strong><span>failed</span><strong class="summary-rate" id="failed-percent">0%</strong></div>
             <div class="run-outcome-detail" id="run-outcome-detail">No result details</div>
             <span class="sr-only" id="skipped-percent">0%</span>
           </div>
@@ -209,6 +209,6 @@
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=13" defer></script>
+  <script src="/static/app.js?v=14" defer></script>
 </body>
 </html>
