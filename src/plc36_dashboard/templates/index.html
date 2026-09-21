@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Run and monitor PLC-36 hardware tests.">
   <title>PLC-36 Test Dashboard</title>
-  <link rel="stylesheet" href="/static/app.css?v=18">
+  <link rel="stylesheet" href="/static/app.css?v=19">
 </head>
 <body>
   <div class="shell">
@@ -44,15 +44,6 @@
       </section>
 
       <section class="tab-panel active" id="panel-health" role="tabpanel" aria-labelledby="tab-health" data-panel="health">
-        <section class="recent-runs-panel" aria-labelledby="recent-runs-heading">
-          <header class="section-bar recent-runs-header">
-            <h2 id="recent-runs-heading">Last completed runs</h2>
-            <button class="primary-button" id="rerun-failures" type="button" disabled>Rerun latest failures</button>
-          </header>
-          <div class="recent-runs-head" aria-hidden="true"><span>Completed</span><span>Scope</span><span>Execution</span><span>Results</span><span></span></div>
-          <div class="recent-runs-list" id="recent-runs-list"><p class="empty-state">No completed runs yet.</p></div>
-        </section>
-
         <div class="health-layout">
           <section class="trend-panel" aria-labelledby="trend-heading">
             <header class="section-bar chart-heading">
@@ -68,12 +59,23 @@
           <aside class="attention-panel" aria-labelledby="attention-heading">
             <header class="section-bar"><div><h2 id="attention-heading">Needs attention</h2></div></header>
             <div class="attention-list" id="attention-list"><p class="empty-state">Loading recorded failures…</p></div>
-            <button class="text-button attention-action" id="view-latest-failures" type="button" disabled>View failures and errors →</button>
+            <footer class="attention-footer">
+              <button class="text-button attention-action" id="view-latest-failures" type="button" disabled>View failures and errors →</button>
+              <span id="last-all-passing">Last all-passing full run: —</span>
+            </footer>
           </aside>
         </div>
 
+        <section class="recent-runs-panel" aria-labelledby="recent-runs-heading">
+          <header class="section-bar recent-runs-header">
+            <h2 id="recent-runs-heading">Last completed runs</h2>
+            <button class="primary-button" id="rerun-failures" type="button" disabled>Rerun latest failures</button>
+          </header>
+          <div class="recent-runs-head" aria-hidden="true"><span>Completed</span><span>Scope</span><span>Execution</span><span>Results</span><span></span></div>
+          <div class="recent-runs-list" id="recent-runs-list"><p class="empty-state">No completed runs yet.</p></div>
+        </section>
+
         <div class="sr-only" aria-hidden="true"><span id="status-period-label">Current week</span><div id="status-donut"></div><div id="status-breakdown"></div></div>
-        <footer class="dashboard-footer"><span>Sources: pytest results · PLC RPC · MegaIND HAT</span><span id="last-all-passing">Last all-passing full run: —</span></footer>
       </section>
 
       <section class="tab-panel" id="panel-tests" role="tabpanel" aria-labelledby="tab-tests" data-panel="tests" hidden>
@@ -182,6 +184,6 @@
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=18" defer></script>
+  <script src="/static/app.js?v=19" defer></script>
 </body>
 </html>

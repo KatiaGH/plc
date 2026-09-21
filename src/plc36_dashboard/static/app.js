@@ -322,7 +322,7 @@ async function loadSummary() {
 }
 
 function recentCompletedRuns() {
-  return state.runs.filter((run) => !["queued", "running", "stopping"].includes(run.status)).slice(0, 3);
+  return state.runs.filter((run) => !["queued", "running", "stopping"].includes(run.status)).slice(0, 5);
 }
 
 function renderHealthOverview() {
@@ -381,6 +381,41 @@ function conciseFailureMessage(error) {
   return (message || "Open run details for the recorded assertion.").replace(/^E\s+/, "");
 }
 
+function sameMetricLabels(left, right) {
+  const leftLabels = left.labels || {};
+  const rightLabels = right.labels || {};
+  const keys = new Set([...Object.keys(leftLabels), ...Object.keys(rightLabels)]);
+  return [...keys].every((key) => String(leftLabels[key]) === String(rightLabels[key]));
+}
+
+function formatVoltage(value, digits = 2) {
+  return Number(value).toFixed(digits);
+}
+
+function configuredToleranceLabel(value) {
+  return Number(value).toFixed(3).replace(/\.?0+$/, "");
+}
+
+function failureMeasurementContext(test) {
+  const tolerance = Number(state.summary?.voltage_tolerance_v);
+  if (!Number.isFinite(tolerance)) return null;
+  const metrics = (state.latestRunDetail?.metrics || []).filter((metric) => metric.nodeid === test.nodeid);
+  const candidates = metrics.flatMap((measured) => {
+    const errorName = measured.name === "measured_voltage"
+      ? "voltage_error"
+      : measured.name === "accuracy_measured_voltage" ? "accuracy_raw_error" : null;
+    if (!errorName) return [];
+    const error = metrics.find((metric) => metric.name === errorName && sameMetricLabels(measured, metric));
+    if (!error || !Number.isFinite(Number(measured.value)) || !Number.isFinite(Number(error.value))) return [];
+    return [{ measured: Number(measured.value), error: Number(error.value) }];
+  }).filter((candidate) => Math.abs(candidate.error) > tolerance)
+    .sort((left, right) => Math.abs(right.error) - Math.abs(left.error));
+  const result = candidates[0];
+  if (!result) return null;
+  const expected = result.measured - result.error;
+  return `Measured ${formatVoltage(result.measured)} V · Expected ${formatVoltage(expected)} V ± ${configuredToleranceLabel(tolerance)} V`;
+}
+
 function renderAttention(tests) {
   const failed = tests.filter((test) => test.outcome === "failed");
   const attentionAction = $("#view-latest-failures");
@@ -397,7 +432,7 @@ function renderAttention(tests) {
   $("#attention-list").innerHTML = failed.slice(0, 2).map((test) => {
     const failureCount = Number(state.summary?.top_failures?.find((item) => item.nodeid === test.nodeid)?.failures || 1);
     const recurring = failureCount > 1;
-    const context = recurring ? `Failed in ${failureCount} recorded executions` : conciseFailureMessage(test.error);
+    const context = failureMeasurementContext(test) || conciseFailureMessage(test.error);
     return `<button class="attention-item${recurring ? " recurring" : ""}" type="button"><strong>${escapeHtml(test.display_name || friendlyTestName(test.nodeid))}</strong><p>${escapeHtml(context)}</p></button>`;
   }).join("") + (failed.length > 2 ? `<p class="attention-more">+${failed.length - 2} more in this run</p>` : "");
   $("#attention-list").querySelectorAll(".attention-item").forEach((row) => {

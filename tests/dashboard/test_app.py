@@ -6,13 +6,14 @@ from plc36_dashboard.app import app
 def test_dashboard_and_assets_are_not_cached() -> None:
     with TestClient(app) as client:
         dashboard = client.get("/")
-        javascript = client.get("/static/app.js?v=18")
-        stylesheet = client.get("/static/app.css?v=18")
+        javascript = client.get("/static/app.js?v=19")
+        stylesheet = client.get("/static/app.css?v=19")
+        summary = client.get("/api/summary")
 
     assert dashboard.status_code == 200
     assert dashboard.headers["cache-control"] == "no-store, max-age=0"
-    assert '/static/app.js?v=18' in dashboard.text
-    assert '/static/app.css?v=18' in dashboard.text
+    assert '/static/app.js?v=19' in dashboard.text
+    assert '/static/app.css?v=19' in dashboard.text
     assert dashboard.text.count("<h1") == 1
     assert '<h2 id="recent-runs-heading">' in dashboard.text
     assert '<h3 id="preset-heading">' in dashboard.text
@@ -35,6 +36,7 @@ def test_dashboard_and_assets_are_not_cached() -> None:
     assert 'id="recent-runs-heading"' in dashboard.text
     assert 'id="recent-runs-list"' in dashboard.text
     assert "Last completed runs" in dashboard.text
+    assert dashboard.text.index('class="health-layout"') < dashboard.text.index('class="recent-runs-panel"')
     assert 'id="analytics-period"' in dashboard.text
     assert 'id="daily-chart"' in dashboard.text
     assert 'id="chart-passed-total"' in dashboard.text
@@ -66,8 +68,11 @@ def test_dashboard_and_assets_are_not_cached() -> None:
     assert javascript.status_code == 200
     assert javascript.headers["cache-control"] == "no-store, max-age=0"
     assert "function recentCompletedRuns()" in javascript.text
-    assert ".slice(0, 3)" in javascript.text
+    assert ".slice(0, 5)" in javascript.text
     assert 'class="recent-run-row' in javascript.text
+    assert "failureMeasurementContext" in javascript.text
+    assert "state.summary?.voltage_tolerance_v" in javascript.text
+    assert "± 0.6 V" not in javascript.text
     assert "bindDailyChartInteractions" in javascript.text
     assert "showDayTests" in javascript.text
     assert 'data-tooltip="${escapeHtml(tooltip)}"' in javascript.text
@@ -76,3 +81,5 @@ def test_dashboard_and_assets_are_not_cached() -> None:
     assert stylesheet.headers["cache-control"] == "no-store, max-age=0"
     assert ".dashboard-tab.active" in stylesheet.text
     assert ".dashboard-tab::after" not in stylesheet.text
+    assert summary.status_code == 200
+    assert isinstance(summary.json()["voltage_tolerance_v"], float)
