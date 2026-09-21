@@ -16,6 +16,8 @@ const state = {
   latestCompletedRun: null,
   latestRunDetail: null,
   latestMeasurementRunId: null,
+  benchStatusLabel: "Checking",
+  benchCheckedAt: "Not checked yet",
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -74,6 +76,24 @@ function formatCheckedTime(value = new Date()) {
     timeZone: "Europe/Sofia",
     timeZoneName: "short",
   }).format(value);
+}
+
+function formatRelativeTime(value) {
+  if (!value) return "Completed recently";
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return "Completed recently";
+  const elapsedSeconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  if (elapsedSeconds < 45) return "Completed just now";
+  if (elapsedSeconds < 3600) {
+    const minutes = Math.round(elapsedSeconds / 60);
+    return `Completed ${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  }
+  if (elapsedSeconds < 86400) {
+    const hours = Math.round(elapsedSeconds / 3600);
+    return `Completed ${hours} hour${hours === 1 ? "" : "s"} ago`;
+  }
+  const days = Math.round(elapsedSeconds / 86400);
+  return `Completed ${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 function shortRunId(runId) {
@@ -142,17 +162,13 @@ function setControlsDisabled(disabled) {
 async function loadCatalog() {
   const catalog = await api("/api/catalog");
   state.catalog = catalog;
-  updateAvailableTests();
+  const gapCount = catalog.categories.filter((category) => !category.available).length;
+  const coverageGaps = $("#coverage-gaps");
+  coverageGaps.hidden = gapCount === 0;
+  coverageGaps.textContent = `${gapCount} coverage gap${gapCount === 1 ? "" : "s"}`;
   renderPresetCards();
   renderIndividualTests();
   if (catalog.collection_error) toast(`Test collection warning: ${catalog.collection_error}`, true);
-}
-
-function updateAvailableTests() {
-  const count = state.catalog.tests.length;
-  const averageSeconds = Number(state.summary?.average_duration_s) || 0;
-  const estimate = averageSeconds ? ` · estimated ${formatTotalDuration(averageSeconds)}` : "";
-  $("#available-test-count").textContent = `${count} test${count === 1 ? "" : "s"} available${estimate}`;
 }
 
 async function loadPresets() {
@@ -295,23 +311,21 @@ async function loadBench() {
     const hatActive = devicesInActiveRun || Boolean(bench.hat.online);
     $("#dut-light").className = `device-status-light ${dutActive ? "online" : "offline"}`;
     $("#hat-light").className = `device-status-light ${hatActive ? "online" : "offline"}`;
-    $("#bench-light").className = `status-square ${bench.ready ? "online" : reserved ? "reserved" : "offline"}`;
     $("#bench-status").textContent = reserved ? "Bench reserved" : bench.ready ? "Bench ready" : "Bench unavailable";
-    $("#bench-state").textContent = reserved ? "Reserved" : bench.ready ? "Ready" : "Unavailable";
+    state.benchStatusLabel = reserved ? "Reserved" : bench.ready ? "Ready" : "Unavailable";
+    state.benchCheckedAt = formatCheckedTime();
     const dutState = bench.dut.state || "Online";
     $("#dut-state").textContent = reserved ? "Reserved by test run" : bench.dut.online ? `${dutState.charAt(0).toUpperCase()}${dutState.slice(1)}` : "Offline";
     $("#hat-state").textContent = reserved ? "Reserved by test run" : bench.hat.online ? "Connected" : "Offline";
-    $("#bench-checked-at").textContent = formatCheckedTime();
     if (bench.active_run_id && !state.activeRunId) connectRun(bench.active_run_id);
     setControlsDisabled(reserved || !bench.ready);
   } catch (error) {
     state.benchReady = false;
     $("#dut-light").className = "device-status-light offline";
     $("#hat-light").className = "device-status-light offline";
-    $("#bench-light").className = "status-square offline";
     $("#bench-status").textContent = "Status unavailable";
-    $("#bench-state").textContent = "Unknown";
-    $("#bench-checked-at").textContent = "Check failed";
+    state.benchStatusLabel = "Unavailable";
+    state.benchCheckedAt = "Check failed";
     setControlsDisabled(true);
     toast(error.message, true);
   }
@@ -320,7 +334,6 @@ async function loadBench() {
 async function loadSummary() {
   const summary = await api("/api/summary");
   state.summary = summary;
-  updateAvailableTests();
   renderHealthOverview();
   renderHardwareMetrics(summary.latest_metrics || []);
 }
@@ -338,7 +351,8 @@ function renderHardwareMetrics(metrics) {
   const result = (metric) => {
     const outcome = String(metric?.outcome || "recorded").toLowerCase();
     const label = outcome.charAt(0).toUpperCase() + outcome.slice(1);
-    return `<span class="metric-result ${escapeHtml(outcome)}">${escapeHtml(label)}</span>`;
+    const icon = { passed: "✓", failed: "×", skipped: "—", recorded: "•" }[outcome] || "•";
+    return `<span class="metric-result ${escapeHtml(outcome)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span aria-hidden="true">${icon}</span><span class="sr-only">${escapeHtml(label)}</span></span>`;
   };
   const tolerance = Number(state.summary?.voltage_tolerance_v);
   const voltageReference = Number.isFinite(tolerance)
@@ -352,23 +366,19 @@ function renderHardwareMetrics(metrics) {
     if (!mean && !spread) return;
     const metric = mean || spread;
     sourceMetrics.push(metric);
-    rows.push(`<tr><th scope="row" class="metric-channel">Sensor ${sensor}</th><td>${value(mean, 2)} mean</td><td>5–45 °C</td><td>${result(metric)}</td></tr>`);
+    rows.push(`<tr><th scope="row" class="metric-channel">Sensor ${sensor}</th><td>${value(mean, 2)} mean / expected 5–45 °C</td><td>${result(metric)}</td></tr>`);
   });
   ["O1", "O2", "O3", "O4"].forEach((channel) => {
     const metric = findOutputMetric(channel);
     if (!metric) return;
     sourceMetrics.push(metric);
-    rows.push(`<tr><th scope="row" class="metric-channel">${channel}</th><td>${value(metric, 3)}</td><td>${voltageReference}</td><td>${result(metric)}</td></tr>`);
+    rows.push(`<tr><th scope="row" class="metric-channel">${channel} at 50%</th><td>${value(metric, 3)} / expected ${voltageReference}</td><td>${result(metric)}</td></tr>`);
   });
   state.latestMeasurementRunId = sourceMetrics[0]?.run_id || null;
-  const sourceRuns = new Set(sourceMetrics.map((metric) => metric.run_id).filter(Boolean));
-  $("#measurement-source").textContent = sourceRuns.size === 1
-    ? `Run ID ${shortRunId([...sourceRuns][0])}`
-    : sourceRuns.size > 1 ? "Latest valid value per channel" : "No measurement source available";
   $("#view-measurement-details").disabled = !state.latestMeasurementRunId;
   $("#hardware-metrics").innerHTML = rows.length
     ? rows.join("")
-    : '<tr><td colspan="4" class="empty-cell">Measurements will appear after a variable-output or 1-Wire run.</td></tr>';
+    : '<tr><td colspan="3" class="empty-cell">Measurements will appear after a variable-output or 1-Wire run.</td></tr>';
 }
 
 function latestCompletedRun() {
@@ -385,34 +395,26 @@ function renderHealthOverview() {
     $("#total-execution-time").textContent = "0s";
     $("#passed-count-summary").textContent = "0";
     $("#failed-count-summary").textContent = "0";
+    $("#skipped-count-summary").textContent = "0";
     $("#passed-percent").textContent = "0%";
     $("#failed-percent").textContent = "0%";
     $("#skipped-percent").textContent = "0%";
-    $("#run-outcome-detail").textContent = "No result details";
     ["#latest-run-details", "#rerun-failures", "#view-latest-failures"].forEach((selector) => { $(selector).disabled = true; });
     renderAttention([]);
     return;
   }
   const completed = Number(run.passed) + Number(run.failed) + Number(run.skipped);
   const percent = (count) => completed ? (Number(count) / completed) * 100 : 0;
-  const currentCatalogCount = state.catalog.tests.length;
-  const catalogContext = completed !== currentCatalogCount
-    ? ` · ${completed} tests at run time / ${currentCatalogCount} currently available`
-    : "";
   $("#latest-run-heading").textContent = "Latest completed run";
-  $("#latest-run-meta").textContent = `Run ID ${shortRunId(run.id)} · ${shortSelection(run)} · ${formatDate(run.finished_at || run.created_at)}${catalogContext}`;
+  $("#latest-run-meta").textContent = formatRelativeTime(run.finished_at || run.created_at);
   $("#completed-tests").textContent = completed;
   $("#total-execution-time").textContent = formatTotalDuration(run.duration_s);
   $("#passed-count-summary").textContent = run.passed;
   $("#failed-count-summary").textContent = run.failed;
+  $("#skipped-count-summary").textContent = run.skipped;
   $("#passed-percent").textContent = formatPercent(percent(run.passed));
   $("#failed-percent").textContent = formatPercent(percent(run.failed));
   $("#skipped-percent").textContent = formatPercent(percent(run.skipped));
-  const frameworkErrors = Math.max(0, Number(run.total || completed) - completed);
-  const detailParts = [`${run.failed} test failure${Number(run.failed) === 1 ? "" : "s"}`];
-  if (frameworkErrors) detailParts.push(`${frameworkErrors} framework error${frameworkErrors === 1 ? "" : "s"}`);
-  if (Number(run.skipped)) detailParts.push(`${run.skipped} skipped`);
-  $("#run-outcome-detail").textContent = detailParts.join(" · ");
   $("#latest-run-details").disabled = false;
   $("#rerun-failures").disabled = Number(run.failed) === 0 || Boolean(state.activeRunId) || !state.benchReady;
   $("#view-latest-failures").disabled = Number(run.failed) === 0;
@@ -436,43 +438,53 @@ async function loadLatestRunDetail(run) {
   }
 }
 
+function conciseFailureMessage(error) {
+  const lines = String(error || "").split("\n").map((line) => line.trim()).filter(Boolean);
+  const useful = lines.filter((line) => (
+    !/<[^>]+ object at 0x[0-9a-f]+>/i.test(line)
+    && !/^(traceback|_+ .* _+|during handling of)/i.test(line)
+  ));
+  const message = useful.find((line) => /measured|expected|limit|timeout|assert/i.test(line)) || useful[0];
+  return (message || "Open run details for the recorded assertion.").replace(/^E\s+/, "");
+}
+
 function renderAttention(tests) {
   const failed = tests.filter((test) => test.outcome === "failed");
-  const gapCount = state.catalog.categories.filter((category) => !category.available).length;
   const attentionAction = $("#view-latest-failures");
-  attentionAction.dataset.action = gapCount ? "coverage" : "failures";
-  attentionAction.textContent = gapCount
-    ? `${gapCount} coverage gap${gapCount === 1 ? "" : "s"} →`
-    : "View failures and errors →";
   if (!state.latestCompletedRun) {
     $("#attention-list").innerHTML = '<div class="attention-empty"><span class="attention-empty-icon" aria-hidden="true">–</span><div><strong>No run history</strong><p>Complete a test run to establish the current bench health.</p></div></div>';
-    attentionAction.disabled = !gapCount;
+    attentionAction.disabled = true;
     return;
   }
   if (!failed.length) {
-    const coverage = gapCount
-      ? `<div class="coverage-summary"><strong>${gapCount} coverage gap${gapCount === 1 ? "" : "s"}</strong> · unavailable test areas do not affect this pass result.</div>`
-      : "";
-    $("#attention-list").innerHTML = `<div class="attention-empty"><span class="attention-empty-icon" aria-hidden="true">✓</span><div><strong>All tests passed</strong><p>No failures in the latest completed run.</p></div></div>${coverage}`;
-    attentionAction.disabled = !gapCount;
+    $("#attention-list").innerHTML = '<div class="attention-empty"><span class="attention-empty-icon" aria-hidden="true">✓</span><div><strong>All tests passed</strong><p>No failures in the latest completed run.</p></div></div>';
+    attentionAction.disabled = true;
     return;
   }
   $("#attention-list").innerHTML = failed.slice(0, 2).map((test) => {
-    const error = String(test.error || "").split("\n").find(Boolean) || "Open run details for the recorded assertion.";
     const failureCount = Number(state.summary?.top_failures?.find((item) => item.nodeid === test.nodeid)?.failures || 1);
     const recurring = failureCount > 1;
-    const label = recurring ? "Intermittent / flaky" : "Current failure";
-    const context = recurring ? `Failed in ${failureCount} recorded executions` : error;
-    return `<article class="attention-item${recurring ? " recurring" : ""}"><small>${label}</small><strong>${escapeHtml(test.display_name || friendlyTestName(test.nodeid))}</strong><p>${escapeHtml(context)}</p><button class="attention-link" type="button">${recurring ? "View history" : "View details"}</button></article>`;
+    const context = recurring ? `Failed in ${failureCount} recorded executions` : conciseFailureMessage(test.error);
+    return `<button class="attention-item${recurring ? " recurring" : ""}" type="button"><strong>${escapeHtml(test.display_name || friendlyTestName(test.nodeid))}</strong><p>${escapeHtml(context)}</p></button>`;
   }).join("") + (failed.length > 2 ? `<p class="attention-more">+${failed.length - 2} more in this run</p>` : "");
-  $("#attention-list").querySelectorAll(".attention-link").forEach((button) => {
-    button.addEventListener("click", () => showRunDetail(state.latestCompletedRun.id, true));
+  $("#attention-list").querySelectorAll(".attention-item").forEach((row) => {
+    row.addEventListener("click", () => showRunDetail(state.latestCompletedRun.id, true));
   });
   attentionAction.disabled = false;
 }
 
 function isoDate(date) {
   return date.toISOString().slice(0, 10);
+}
+
+function sofiaIsoDate(date = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "Europe/Sofia",
+  }).formatToParts(date).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 function completeDailySeries(rows, startDate, endDate) {
@@ -506,7 +518,15 @@ function chartDateParts(value) {
 }
 
 function renderDailyChart(series) {
-  const totalCases = series.reduce((sum, day) => sum + day.passed + day.failed + day.skipped, 0);
+  const totals = {
+    passed: series.reduce((sum, day) => sum + day.passed, 0),
+    failed: series.reduce((sum, day) => sum + day.failed, 0),
+    skipped: series.reduce((sum, day) => sum + day.skipped, 0),
+  };
+  $("#chart-passed-total").textContent = totals.passed;
+  $("#chart-failed-total").textContent = totals.failed;
+  $("#chart-skipped-total").textContent = totals.skipped;
+  const totalCases = totals.passed + totals.failed + totals.skipped;
   const chart = $("#daily-chart");
   if (!totalCases) {
     chart.classList.add("empty");
@@ -592,11 +612,15 @@ function renderStatusSummary(series, period) {
 
 async function loadAnalytics() {
   const analytics = await api(`/api/analytics?period=${encodeURIComponent(state.analyticsPeriod)}`);
-  const series = completeDailySeries(
+  let series = completeDailySeries(
     analytics.daily || [],
     analytics.start_date,
     analytics.end_date,
   );
+  if (state.analyticsPeriod === "current_week") {
+    const today = sofiaIsoDate();
+    series = series.filter((day) => day.date <= today);
+  }
   renderDailyChart(series);
   renderStatusSummary(series, analytics.period);
 }
@@ -741,6 +765,9 @@ async function showRunDetail(runId, failedOnly = false) {
       `).join("")}</ul>` : '<p class="empty-cell">No matching test results were recorded.</p>';
     $("#detail-content").innerHTML = `
       <div class="detail-summary">
+        <article><small>RUN ID</small><strong>${escapeHtml(run.id)}</strong></article>
+        <article><small>SCOPE</small><strong>${escapeHtml(shortSelection(run))}</strong></article>
+        <article><small>COMPLETED</small><strong>${escapeHtml(formatDate(run.finished_at || run.created_at))}</strong></article>
         <article><small>STATUS</small><strong>${escapeHtml(run.status)}</strong></article>
         <article><small>RESULTS</small><strong>${run.passed}P · ${run.failed}F · ${run.skipped}S</strong></article>
         <article><small>COMMIT</small><strong>${escapeHtml(run.git_sha || "—")}</strong></article>
@@ -795,13 +822,12 @@ async function initialize() {
 $("#run-all").addEventListener("click", () => startRun("all", []));
 $("#choose-tests").addEventListener("click", () => activateTab("tests", true));
 $("#latest-run-details").addEventListener("click", () => { if (state.latestCompletedRun) showRunDetail(state.latestCompletedRun.id); });
-$("#view-latest-failures").addEventListener("click", (event) => {
-  if (event.currentTarget.dataset.action === "coverage") activateTab("tests", true);
-  else if (state.latestCompletedRun) showRunDetail(state.latestCompletedRun.id, true);
+$("#view-latest-failures").addEventListener("click", () => {
+  if (state.latestCompletedRun) showRunDetail(state.latestCompletedRun.id, true);
 });
 $("#rerun-failures").addEventListener("click", rerunLatestFailures);
 $("#bench-details").addEventListener("click", () => {
-  toast(`Bench PLC36-A · ${$("#bench-state").textContent} · PLC ${$("#dut-state").textContent} · HAT ${$("#hat-state").textContent}`);
+  toast(`${state.benchStatusLabel} · PLC ${$("#dut-state").textContent} · HAT ${$("#hat-state").textContent} · Checked ${state.benchCheckedAt}`);
 });
 $("#view-measurement-details").addEventListener("click", () => {
   if (state.latestMeasurementRunId) showRunDetail(state.latestMeasurementRunId);
@@ -825,14 +851,6 @@ $("#refresh-bench").addEventListener("click", loadBench);
 $("#refresh-runs").addEventListener("click", async () => { await Promise.all([loadSummary(), loadRuns(), loadAnalytics()]); toast("Run history refreshed."); });
 $("#toggle-runs").addEventListener("click", () => { state.showAllRuns = !state.showAllRuns; renderRuns(); });
 $("#analytics-period").addEventListener("change", async (event) => { state.analyticsPeriod = event.target.value; await loadAnalytics(); });
-document.querySelectorAll("[data-period]").forEach((button) => {
-  button.addEventListener("click", async () => {
-    state.analyticsPeriod = button.dataset.period;
-    $("#analytics-period").value = state.analyticsPeriod;
-    document.querySelectorAll("[data-period]").forEach((item) => item.classList.toggle("active", item === button));
-    await loadAnalytics();
-  });
-});
 $("#close-detail").addEventListener("click", () => $("#run-detail").close());
 $("#close-logs").addEventListener("click", () => $("#run-logs").close());
 document.querySelectorAll("[data-tab]").forEach((button) => {
