@@ -15,9 +15,6 @@ const state = {
   summary: null,
   latestCompletedRun: null,
   latestRunDetail: null,
-  latestMeasurementRunId: null,
-  benchStatusLabel: "Checking",
-  benchCheckedAt: "Not checked yet",
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -67,33 +64,22 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
-function formatCheckedTime(value = new Date()) {
-  return new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-    timeZone: "Europe/Sofia",
-    timeZoneName: "short",
-  }).format(value);
-}
-
 function formatRelativeTime(value) {
-  if (!value) return "Completed recently";
+  if (!value) return "Recently";
   const timestamp = new Date(value).getTime();
-  if (!Number.isFinite(timestamp)) return "Completed recently";
+  if (!Number.isFinite(timestamp)) return "Recently";
   const elapsedSeconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
-  if (elapsedSeconds < 45) return "Completed just now";
+  if (elapsedSeconds < 45) return "Just now";
   if (elapsedSeconds < 3600) {
     const minutes = Math.round(elapsedSeconds / 60);
-    return `Completed ${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+    return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
   }
   if (elapsedSeconds < 86400) {
     const hours = Math.round(elapsedSeconds / 3600);
-    return `Completed ${hours} hour${hours === 1 ? "" : "s"} ago`;
+    return `${hours} hour${hours === 1 ? "" : "s"} ago`;
   }
   const days = Math.round(elapsedSeconds / 86400);
-  return `Completed ${days} day${days === 1 ? "" : "s"} ago`;
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 function shortRunId(runId) {
@@ -302,6 +288,11 @@ async function savePreset(event) {
 }
 
 async function loadBench() {
+  const setConnectionStatus = (selector, connected) => {
+    const node = $(selector);
+    node.textContent = connected ? "Connected" : "Disconnected";
+    node.className = `connection-status ${connected ? "connected" : "disconnected"}`;
+  };
   try {
     const bench = await api("/api/bench");
     const reserved = bench.state === "reserved";
@@ -309,23 +300,16 @@ async function loadBench() {
     const devicesInActiveRun = Boolean(reserved && bench.active_run_id);
     const dutActive = devicesInActiveRun || Boolean(bench.dut.online);
     const hatActive = devicesInActiveRun || Boolean(bench.hat.online);
-    $("#dut-light").className = `device-status-light ${dutActive ? "online" : "offline"}`;
-    $("#hat-light").className = `device-status-light ${hatActive ? "online" : "offline"}`;
-    $("#bench-status").textContent = reserved ? "Bench reserved" : bench.ready ? "Bench ready" : "Bench unavailable";
-    state.benchStatusLabel = reserved ? "Reserved" : bench.ready ? "Ready" : "Unavailable";
-    state.benchCheckedAt = formatCheckedTime();
-    const dutState = bench.dut.state || "Online";
-    $("#dut-state").textContent = reserved ? "Reserved by test run" : bench.dut.online ? `${dutState.charAt(0).toUpperCase()}${dutState.slice(1)}` : "Offline";
-    $("#hat-state").textContent = reserved ? "Reserved by test run" : bench.hat.online ? "Connected" : "Offline";
+    setConnectionStatus("#dut-state", dutActive);
+    setConnectionStatus("#hat-state", hatActive);
+    $("#bench-status").textContent = `PLC ${dutActive ? "connected" : "disconnected"}; HAT ${hatActive ? "connected" : "disconnected"}; Raspberry Pi connected`;
     if (bench.active_run_id && !state.activeRunId) connectRun(bench.active_run_id);
     setControlsDisabled(reserved || !bench.ready);
   } catch (error) {
     state.benchReady = false;
-    $("#dut-light").className = "device-status-light offline";
-    $("#hat-light").className = "device-status-light offline";
-    $("#bench-status").textContent = "Status unavailable";
-    state.benchStatusLabel = "Unavailable";
-    state.benchCheckedAt = "Check failed";
+    setConnectionStatus("#dut-state", false);
+    setConnectionStatus("#hat-state", false);
+    $("#bench-status").textContent = "PLC disconnected; HAT disconnected; Raspberry Pi connected";
     setControlsDisabled(true);
     toast(error.message, true);
   }
@@ -335,87 +319,36 @@ async function loadSummary() {
   const summary = await api("/api/summary");
   state.summary = summary;
   renderHealthOverview();
-  renderHardwareMetrics(summary.latest_metrics || []);
 }
 
-function renderHardwareMetrics(metrics) {
-  const findMetric = (name, label, value) => metrics.find((metric) => (
-    metric.name === name && String(metric.labels?.[label]) === String(value)
-  ));
-  const findOutputMetric = (channel) => metrics.find((metric) => (
-    ["measured_voltage", "accuracy_measured_voltage"].includes(metric.name)
-    && String(metric.labels?.channel) === channel
-    && Number(metric.labels?.setpoint_percent) === 50
-  ));
-  const value = (metric, digits) => metric ? `${Number(metric.value).toFixed(digits)} ${escapeHtml(metric.unit)}` : "—";
-  const result = (metric) => {
-    const outcome = String(metric?.outcome || "recorded").toLowerCase();
-    const label = outcome.charAt(0).toUpperCase() + outcome.slice(1);
-    const icon = { passed: "✓", failed: "×", skipped: "—", recorded: "•" }[outcome] || "•";
-    return `<span class="metric-result ${escapeHtml(outcome)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span aria-hidden="true">${icon}</span><span class="sr-only">${escapeHtml(label)}</span></span>`;
-  };
-  const tolerance = Number(state.summary?.voltage_tolerance_v);
-  const voltageReference = Number.isFinite(tolerance)
-    ? `5.000 V ± ${tolerance.toFixed(3)} V`
-    : "5.000 V · configured tolerance";
-  const rows = [];
-  const sourceMetrics = [];
-  [1, 2].forEach((sensor) => {
-    const mean = findMetric("temperature_mean", "sensor", sensor);
-    const spread = findMetric("temperature_spread", "sensor", sensor);
-    if (!mean && !spread) return;
-    const metric = mean || spread;
-    sourceMetrics.push(metric);
-    rows.push(`<tr><th scope="row" class="metric-channel">Sensor ${sensor}</th><td>${value(mean, 2)} mean / expected 5–45 °C</td><td>${result(metric)}</td></tr>`);
-  });
-  ["O1", "O2", "O3", "O4"].forEach((channel) => {
-    const metric = findOutputMetric(channel);
-    if (!metric) return;
-    sourceMetrics.push(metric);
-    rows.push(`<tr><th scope="row" class="metric-channel">${channel} at 50%</th><td>${value(metric, 3)} / expected ${voltageReference}</td><td>${result(metric)}</td></tr>`);
-  });
-  state.latestMeasurementRunId = sourceMetrics[0]?.run_id || null;
-  $("#view-measurement-details").disabled = !state.latestMeasurementRunId;
-  $("#hardware-metrics").innerHTML = rows.length
-    ? rows.join("")
-    : '<tr><td colspan="3" class="empty-cell">Measurements will appear after a variable-output or 1-Wire run.</td></tr>';
-}
-
-function latestCompletedRun() {
-  return state.runs.find((run) => !["queued", "running", "stopping"].includes(run.status)) || null;
+function recentCompletedRuns() {
+  return state.runs.filter((run) => !["queued", "running", "stopping"].includes(run.status)).slice(0, 3);
 }
 
 function renderHealthOverview() {
-  const run = latestCompletedRun();
+  const runs = recentCompletedRuns();
+  const run = runs[0] || null;
   state.latestCompletedRun = run;
   if (!run) {
-    $("#latest-run-heading").textContent = "Latest completed run";
-    $("#latest-run-meta").textContent = "No completed run yet";
-    $("#completed-tests").textContent = "0";
-    $("#total-execution-time").textContent = "0s";
-    $("#passed-count-summary").textContent = "0";
-    $("#failed-count-summary").textContent = "0";
-    $("#skipped-count-summary").textContent = "0";
-    $("#passed-percent").textContent = "0%";
-    $("#failed-percent").textContent = "0%";
-    $("#skipped-percent").textContent = "0%";
-    ["#latest-run-details", "#rerun-failures", "#view-latest-failures"].forEach((selector) => { $(selector).disabled = true; });
+    $("#recent-runs-list").innerHTML = '<p class="empty-state">No completed runs yet.</p>';
+    ["#rerun-failures", "#view-latest-failures"].forEach((selector) => { $(selector).disabled = true; });
+    $("#last-all-passing").textContent = "Last all-passing full run: none recorded";
     renderAttention([]);
     return;
   }
-  const completed = Number(run.passed) + Number(run.failed) + Number(run.skipped);
-  const percent = (count) => completed ? (Number(count) / completed) * 100 : 0;
-  $("#latest-run-heading").textContent = "Latest completed run";
-  $("#latest-run-meta").textContent = formatRelativeTime(run.finished_at || run.created_at);
-  $("#completed-tests").textContent = completed;
-  $("#total-execution-time").textContent = formatTotalDuration(run.duration_s);
-  $("#passed-count-summary").textContent = run.passed;
-  $("#failed-count-summary").textContent = run.failed;
-  $("#skipped-count-summary").textContent = run.skipped;
-  $("#passed-percent").textContent = formatPercent(percent(run.passed));
-  $("#failed-percent").textContent = formatPercent(percent(run.failed));
-  $("#skipped-percent").textContent = formatPercent(percent(run.skipped));
-  $("#latest-run-details").disabled = false;
+  $("#recent-runs-list").innerHTML = runs.map((item, index) => {
+    const completed = Number(item.passed) + Number(item.failed) + Number(item.skipped);
+    return `<article class="recent-run-row${index === 0 ? " latest" : ""}">
+      <span class="recent-run-time">${escapeHtml(formatRelativeTime(item.finished_at || item.created_at))}</span>
+      <span class="recent-run-scope" title="${escapeHtml(shortSelection(item))}">${escapeHtml(shortSelection(item))}</span>
+      <span><strong>${completed}</strong> cases · ${escapeHtml(formatTotalDuration(item.duration_s))}</span>
+      <span class="recent-run-results"><span class="passed">${item.passed} passed</span><span class="failed">${item.failed} failed</span><span class="skipped">${item.skipped} skipped</span></span>
+      <button class="text-button recent-run-details" type="button" data-run-id="${escapeHtml(item.id)}">Details</button>
+    </article>`;
+  }).join("");
+  $("#recent-runs-list").querySelectorAll(".recent-run-details").forEach((button) => {
+    button.addEventListener("click", () => showRunDetail(button.dataset.runId));
+  });
   $("#rerun-failures").disabled = Number(run.failed) === 0 || Boolean(state.activeRunId) || !state.benchReady;
   $("#view-latest-failures").disabled = Number(run.failed) === 0;
   const allPassing = state.runs.find((item) => item.selection_type === "all" && item.status === "passed" && Number(item.failed) === 0);
@@ -821,17 +754,10 @@ async function initialize() {
 
 $("#run-all").addEventListener("click", () => startRun("all", []));
 $("#choose-tests").addEventListener("click", () => activateTab("tests", true));
-$("#latest-run-details").addEventListener("click", () => { if (state.latestCompletedRun) showRunDetail(state.latestCompletedRun.id); });
 $("#view-latest-failures").addEventListener("click", () => {
   if (state.latestCompletedRun) showRunDetail(state.latestCompletedRun.id, true);
 });
 $("#rerun-failures").addEventListener("click", rerunLatestFailures);
-$("#bench-details").addEventListener("click", () => {
-  toast(`${state.benchStatusLabel} · PLC ${$("#dut-state").textContent} · HAT ${$("#hat-state").textContent} · Checked ${state.benchCheckedAt}`);
-});
-$("#view-measurement-details").addEventListener("click", () => {
-  if (state.latestMeasurementRunId) showRunDetail(state.latestMeasurementRunId);
-});
 $("#run-presets").addEventListener("click", runSelectedPresets);
 $("#toggle-individual-tests").addEventListener("click", () => {
   state.showAllIndividualTests = !state.showAllIndividualTests;
@@ -847,7 +773,6 @@ $("#stop-run").addEventListener("click", stopActiveRun);
 $("#view-failed-tests").addEventListener("click", () => {
   if (state.lastCompletedRunId) showRunDetail(state.lastCompletedRunId, true);
 });
-$("#refresh-bench").addEventListener("click", loadBench);
 $("#refresh-runs").addEventListener("click", async () => { await Promise.all([loadSummary(), loadRuns(), loadAnalytics()]); toast("Run history refreshed."); });
 $("#toggle-runs").addEventListener("click", () => { state.showAllRuns = !state.showAllRuns; renderRuns(); });
 $("#analytics-period").addEventListener("change", async (event) => { state.analyticsPeriod = event.target.value; await loadAnalytics(); });

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Run and monitor PLC-36 hardware tests.">
   <title>PLC-36 Test Dashboard</title>
-  <link rel="stylesheet" href="/static/app.css?v=15">
+  <link rel="stylesheet" href="/static/app.css?v=16">
 </head>
 <body>
   <div class="shell">
@@ -32,35 +32,25 @@
 
       <section class="bench-strip" aria-label="Bench connections">
         <article>
-          <span class="device-status-light neutral" id="dut-light"></span>
-          <strong>PLC&nbsp;&nbsp;<span id="dut-state">Checking…</span></strong>
+          <strong>PLC&nbsp;&nbsp;<span class="connection-status checking" id="dut-state">Checking…</span></strong>
         </article>
         <article>
-          <span class="device-status-light neutral" id="hat-light"></span>
-          <strong>HAT&nbsp;&nbsp;<span id="hat-state">Checking…</span></strong>
+          <strong>HAT&nbsp;&nbsp;<span class="connection-status checking" id="hat-state">Checking…</span></strong>
         </article>
         <article>
-          <span class="device-status-light online" id="pi-light"></span>
-          <strong>Raspberry Pi&nbsp;&nbsp;<span>Online</span></strong>
+          <strong>Raspberry Pi&nbsp;&nbsp;<span class="connection-status connected">Connected</span></strong>
         </article>
-        <button class="secondary-button compact-button" id="bench-details" type="button">View bench details</button>
-        <button class="icon-button" id="refresh-bench" type="button" aria-label="Refresh bench status" title="Refresh bench status">↻</button>
         <span class="sr-only" id="bench-status" aria-live="polite">Checking bench…</span>
       </section>
 
       <section class="tab-panel active" id="panel-health" role="tabpanel" aria-labelledby="tab-health" data-panel="health">
-        <section class="latest-run" aria-labelledby="latest-run-heading">
-          <header class="latest-run-header">
-            <div class="latest-run-title"><h1 id="latest-run-heading">Latest completed run</h1><p id="latest-run-meta">No completed run yet</p></div>
-            <div class="latest-run-actions"><button class="text-button" id="latest-run-details" type="button" disabled>View run details</button><button class="primary-button" id="rerun-failures" type="button" disabled>Rerun failures</button></div>
+        <section class="recent-runs-panel" aria-labelledby="recent-runs-heading">
+          <header class="section-bar recent-runs-header">
+            <h1 id="recent-runs-heading">Last completed runs</h1>
+            <button class="primary-button" id="rerun-failures" type="button" disabled>Rerun latest failures</button>
           </header>
-          <div class="run-summary-grid">
-            <div><strong id="completed-tests">0</strong><span>completed</span></div>
-            <div><strong id="total-execution-time">0s</strong></div>
-            <div class="passed summary-result"><strong id="passed-count-summary">0</strong><span>passed</span><strong class="summary-rate" id="passed-percent">0%</strong></div>
-            <div class="failed summary-result"><strong id="failed-count-summary">0</strong><span>failed</span><strong class="summary-rate" id="failed-percent">0%</strong></div>
-            <div class="skipped summary-result"><strong id="skipped-count-summary">0</strong><span>skipped</span><strong class="summary-rate" id="skipped-percent">0%</strong></div>
-          </div>
+          <div class="recent-runs-head" aria-hidden="true"><span>Completed</span><span>Scope</span><span>Execution</span><span>Results</span><span></span></div>
+          <div class="recent-runs-list" id="recent-runs-list"><p class="empty-state">No completed runs yet.</p></div>
         </section>
 
         <div class="health-layout">
@@ -81,16 +71,6 @@
             <button class="text-button attention-action" id="view-latest-failures" type="button" disabled>View failures and errors →</button>
           </aside>
         </div>
-
-        <section class="measurements-panel" aria-labelledby="measurements-heading">
-          <header class="section-bar measurement-heading"><h2 id="measurements-heading">Latest representative measurements</h2><button class="text-button" id="view-measurement-details" type="button">Measurement details</button></header>
-          <div class="measurement-table-wrap">
-            <table class="measurement-table">
-              <thead><tr><th>Channel</th><th>Measurement</th><th><span class="sr-only">Status</span></th></tr></thead>
-              <tbody id="hardware-metrics"><tr><td colspan="3" class="empty-cell">Measurements will appear after a variable-output or 1-Wire run.</td></tr></tbody>
-            </table>
-          </div>
-        </section>
 
         <div class="sr-only" aria-hidden="true"><span id="status-period-label">Current week</span><div id="status-donut"></div><div id="status-breakdown"></div></div>
         <footer class="dashboard-footer"><span>Sources: pytest results · PLC RPC · MegaIND HAT</span><span id="last-all-passing">Last all-passing full run: —</span></footer>
@@ -202,6 +182,6 @@
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=15" defer></script>
+  <script src="/static/app.js?v=16" defer></script>
 </body>
 </html>
