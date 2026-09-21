@@ -384,6 +384,8 @@ class DashboardDatabase:
 
     def test_case_history(self, period: str = "current_week") -> dict[str, Any]:
         supported_periods = {
+            "today",
+            "last_24h",
             "current_week",
             "last_week",
             "last_month",
@@ -399,8 +401,17 @@ class DashboardDatabase:
         current_week_start = today - timedelta(days=today.weekday())
         start_date = None
         end_date = today
+        start_timestamp = None
+        end_timestamp = None
 
-        if period == "current_week":
+        if period == "today":
+            start_date = today
+        elif period == "last_24h":
+            end_timestamp = datetime.now(timezone.utc)
+            start_timestamp = end_timestamp - timedelta(hours=24)
+            start_date = start_timestamp.date()
+            end_date = end_timestamp.date()
+        elif period == "current_week":
             start_date = current_week_start
             end_date = current_week_start + timedelta(days=6)
         elif period == "last_week":
@@ -417,10 +428,13 @@ class DashboardDatabase:
         if period != "max":
             assert start_date is not None
             date_filter = "AND r.created_at >= ? AND r.created_at < ?"
-            parameters = (
-                f"{start_date.isoformat()}T00:00:00",
-                f"{(end_date + timedelta(days=1)).isoformat()}T00:00:00",
-            )
+            if start_timestamp is not None and end_timestamp is not None:
+                parameters = (start_timestamp.isoformat(), end_timestamp.isoformat())
+            else:
+                parameters = (
+                    f"{start_date.isoformat()}T00:00:00",
+                    f"{(end_date + timedelta(days=1)).isoformat()}T00:00:00",
+                )
 
         with self._connect() as db:
             rows = db.execute(
@@ -445,13 +459,14 @@ class DashboardDatabase:
                     WHERE day_rank = 1
                 )
                 SELECT
+                    r.id AS run_id,
                     r.date,
                     SUM(tr.outcome = 'passed') AS passed,
                     SUM(tr.outcome = 'failed') AS failed,
                     SUM(tr.outcome = 'skipped') AS skipped
                 FROM canonical_runs AS r
                 JOIN test_results AS tr ON tr.run_id = r.id
-                GROUP BY r.date
+                GROUP BY r.id, r.date
                 ORDER BY r.date
                 """,
                 parameters,
@@ -463,6 +478,7 @@ class DashboardDatabase:
             "end_date": end_date.isoformat(),
             "daily": [
                 {
+                    "run_id": str(row["run_id"]),
                     "date": str(row["date"]),
                     "passed": int(row["passed"] or 0),
                     "failed": int(row["failed"] or 0),

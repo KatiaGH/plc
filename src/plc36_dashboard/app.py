@@ -194,6 +194,8 @@ async def summary() -> dict[str, Any]:
 @app.get("/api/analytics")
 async def analytics(
     period: Literal[
+        "today",
+        "last_24h",
         "current_week",
         "last_week",
         "last_month",

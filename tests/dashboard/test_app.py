@@ -6,13 +6,15 @@ from plc36_dashboard.app import app
 def test_dashboard_and_assets_are_not_cached() -> None:
     with TestClient(app) as client:
         dashboard = client.get("/")
-        javascript = client.get("/static/app.js?v=16")
-        stylesheet = client.get("/static/app.css?v=16")
+        javascript = client.get("/static/app.js?v=17")
+        stylesheet = client.get("/static/app.css?v=17")
 
     assert dashboard.status_code == 200
     assert dashboard.headers["cache-control"] == "no-store, max-age=0"
-    assert '/static/app.js?v=16' in dashboard.text
-    assert '/static/app.css?v=16' in dashboard.text
+    assert '/static/app.js?v=17' in dashboard.text
+    assert '/static/app.css?v=17' in dashboard.text
+    assert '<option value="today">Today</option>' in dashboard.text
+    assert '<option value="last_24h">Last 24 hours</option>' in dashboard.text
     assert ">Current week</option>" in dashboard.text
     assert ">Last week</option>" in dashboard.text
     assert 'id="tab-health"' in dashboard.text
@@ -62,6 +64,10 @@ def test_dashboard_and_assets_are_not_cached() -> None:
     assert "function recentCompletedRuns()" in javascript.text
     assert ".slice(0, 3)" in javascript.text
     assert 'class="recent-run-row' in javascript.text
+    assert "bindDailyChartInteractions" in javascript.text
+    assert "showDayTests" in javascript.text
+    assert 'data-tooltip="${escapeHtml(tooltip)}"' in javascript.text
+    assert 'series.filter((day) => day.date <= today)' not in javascript.text
     assert stylesheet.status_code == 200
     assert stylesheet.headers["cache-control"] == "no-store, max-age=0"
     assert ".dashboard-tab.active" in stylesheet.text

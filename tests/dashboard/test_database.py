@@ -68,6 +68,7 @@ def test_database_records_results_and_metrics(tmp_path: Path) -> None:
     assert analytics["daily"][-1]["passed"] == 1
     assert analytics["daily"][-1]["failed"] == 0
     assert analytics["daily"][-1]["skipped"] == 0
+    assert analytics["daily"][-1]["run_id"] == "run-1"
     start_date = date.fromisoformat(analytics["start_date"])
     end_date = date.fromisoformat(analytics["end_date"])
     assert start_date.weekday() == 0
@@ -78,6 +79,14 @@ def test_database_records_results_and_metrics(tmp_path: Path) -> None:
     last_week_end = date.fromisoformat(last_week["end_date"])
     assert last_week_start.weekday() == 0
     assert last_week_end == last_week_start + timedelta(days=6)
+
+    today = database.test_case_history("today")
+    assert today["start_date"] == today["end_date"]
+    assert today["daily"][-1]["run_id"] == "run-1"
+
+    last_24h = database.test_case_history("last_24h")
+    assert last_24h["period"] == "last_24h"
+    assert last_24h["daily"][-1]["passed"] == 1
 
 
 def test_history_uses_only_latest_full_run_per_day(tmp_path: Path) -> None:

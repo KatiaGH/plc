@@ -410,16 +410,6 @@ function isoDate(date) {
   return date.toISOString().slice(0, 10);
 }
 
-function sofiaIsoDate(date = new Date()) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    timeZone: "Europe/Sofia",
-  }).formatToParts(date).map((part) => [part.type, part.value]));
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
 function completeDailySeries(rows, startDate, endDate) {
   const byDate = new Map(rows.map((row) => [row.date, row]));
   const end = new Date(`${endDate}T00:00:00Z`);
@@ -434,6 +424,7 @@ function completeDailySeries(rows, startDate, endDate) {
     const values = byDate.get(date) || {};
     series.push({
       date,
+      runId: values.run_id || null,
       passed: Number(values.passed) || 0,
       failed: Number(values.failed) || 0,
       skipped: Number(values.skipped) || 0,
@@ -448,6 +439,85 @@ function chartDateParts(value) {
     weekday: new Intl.DateTimeFormat(undefined, { weekday: "short", timeZone: "UTC" }).format(date),
     date: new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", timeZone: "UTC" }).format(date),
   };
+}
+
+async function showDayTests(date, fallbackRunId) {
+  try {
+    const runIds = state.runs
+      .filter((run) => !["queued", "running", "stopping"].includes(run.status))
+      .filter((run) => String(run.created_at || "").slice(0, 10) === date)
+      .filter((run) => state.analyticsPeriod !== "last_24h" || new Date(run.created_at).getTime() >= Date.now() - 86400000)
+      .map((run) => run.id);
+    if (!runIds.length && fallbackRunId) runIds.push(fallbackRunId);
+    const runs = await Promise.all([...new Set(runIds)].map((runId) => (
+      api(`/api/runs/${encodeURIComponent(runId)}`)
+    )));
+    const tests = runs.flatMap((run) => (run.tests || []).map((test) => ({ test, run })))
+      .sort((left, right) => {
+        const outcomeOrder = Number(left.test.outcome !== "failed") - Number(right.test.outcome !== "failed");
+        const leftName = left.test.display_name || friendlyTestName(left.test.nodeid);
+        const rightName = right.test.display_name || friendlyTestName(right.test.nodeid);
+        return outcomeOrder || leftName.localeCompare(rightName);
+      });
+    const totals = tests.reduce((result, { test }) => {
+      result[test.outcome] = (result[test.outcome] || 0) + 1;
+      return result;
+    }, { passed: 0, failed: 0, skipped: 0 });
+    const label = chartDateParts(date);
+    $("#detail-title").textContent = `All tests · ${label.weekday} ${label.date}`;
+    const testList = tests.length ? `<ul class="detail-list">${tests.map(({ test, run }) => `
+      <li>
+        <span class="status-badge ${escapeHtml(test.outcome)}">${escapeHtml(test.outcome)}</span>
+        <span class="test-result-name">${escapeHtml(test.display_name || friendlyTestName(test.nodeid))}<small class="day-run-context">${escapeHtml(shortSelection(run))} · ${escapeHtml(formatDate(run.finished_at || run.created_at))}</small></span>
+      </li>
+    `).join("")}</ul>` : '<p class="empty-cell">No test results were recorded for this day.</p>';
+    $("#detail-content").innerHTML = `
+      <div class="detail-summary">
+        <article><small>DATE</small><strong>${escapeHtml(`${label.weekday} ${label.date}`)}</strong></article>
+        <article><small>COMPLETED RUNS</small><strong>${runs.length}</strong></article>
+        <article><small>RESULTS</small><strong>${totals.passed}P · ${totals.failed}F · ${totals.skipped}S</strong></article>
+      </div>
+      <h3>All recorded test results</h3>
+      ${testList}
+    `;
+    $("#run-detail").showModal();
+  } catch (error) { toast(error.message, true); }
+}
+
+function bindDailyChartInteractions(chart) {
+  const tooltip = chart.querySelector(".chart-tooltip");
+  const hideTooltip = () => { tooltip.hidden = true; };
+  const positionTooltip = (event) => {
+    const bounds = chart.getBoundingClientRect();
+    const preferredLeft = event.clientX - bounds.left + 12;
+    const preferredTop = event.clientY - bounds.top - 42;
+    tooltip.style.left = `${Math.max(8, Math.min(preferredLeft, bounds.width - tooltip.offsetWidth - 8))}px`;
+    tooltip.style.top = `${Math.max(8, preferredTop)}px`;
+  };
+
+  chart.querySelectorAll(".chart-segment").forEach((segment) => {
+    segment.addEventListener("mouseenter", (event) => {
+      tooltip.textContent = segment.dataset.tooltip;
+      tooltip.hidden = false;
+      positionTooltip(event);
+    });
+    segment.addEventListener("mousemove", positionTooltip);
+    segment.addEventListener("mouseleave", hideTooltip);
+  });
+
+  chart.querySelectorAll(".chart-day[data-run-id]").forEach((day) => {
+    const openRun = () => {
+      hideTooltip();
+      showDayTests(day.dataset.date, day.dataset.runId);
+    };
+    day.addEventListener("click", openRun);
+    day.addEventListener("keydown", (event) => {
+      if (["Enter", " "].includes(event.key)) {
+        event.preventDefault();
+        openRun();
+      }
+    });
+  });
 }
 
 function renderDailyChart(series) {
@@ -500,18 +570,24 @@ function renderDailyChart(series) {
     const segments = ["passed", "failed", "skipped"].map((key) => {
       const segmentHeight = (day[key] / maxValue) * plotHeight;
       accumulated += segmentHeight;
-      return `<rect x="${x(index)}" y="${top + plotHeight - accumulated}" width="${barWidth}" height="${segmentHeight}" class="chart-bar ${key}"></rect>`;
+      const label = key.charAt(0).toUpperCase() + key.slice(1);
+      const percent = total ? (day[key] / total) * 100 : 0;
+      const tooltip = `${label}: ${day[key]} tests (${formatPercent(percent)})`;
+      return `<rect x="${x(index)}" y="${top + plotHeight - accumulated}" width="${barWidth}" height="${segmentHeight}" class="chart-bar chart-segment ${key}" data-tooltip="${escapeHtml(tooltip)}"></rect>`;
     }).join("");
     const totalLabel = total && series.length <= 31 ? `<text x="${x(index) + barWidth / 2}" y="${Math.max(11, y(total) - 6)}" class="chart-total" text-anchor="middle">${total}</text>` : "";
     const dateLabel = chartDateParts(day.date);
-    const accessible = `${dateLabel.weekday} ${dateLabel.date}: ${total} cases, ${day.passed} passed, ${day.failed} failed, ${day.skipped} skipped`;
-    return `<g tabindex="0" aria-label="${escapeHtml(accessible)}"><title>${escapeHtml(accessible)}</title>${segments}${totalLabel}</g>`;
+    const percent = (value) => formatPercent(total ? (value / total) * 100 : 0);
+    const accessible = `${dateLabel.weekday} ${dateLabel.date}: ${total} cases, ${day.passed} passed (${percent(day.passed)}), ${day.failed} failed (${percent(day.failed)}), ${day.skipped} skipped (${percent(day.skipped)})${day.runId ? ". Select to view all tests." : ""}`;
+    const interaction = day.runId ? ` class="chart-day" data-date="${escapeHtml(day.date)}" data-run-id="${escapeHtml(day.runId)}" role="button" tabindex="0"` : ' class="chart-day"';
+    return `<g${interaction} aria-label="${escapeHtml(accessible)}">${segments}${totalLabel}</g>`;
   }).join("");
 
   chart.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily passed, failed, and skipped test cases">
     <text x="14" y="${top + plotHeight / 2}" class="chart-axis-title" text-anchor="middle" transform="rotate(-90 14 ${top + plotHeight / 2})">Number of test cases</text>
     ${grid}${labels}${bars}
-  </svg>`;
+  </svg><div class="chart-tooltip" role="tooltip" hidden></div>`;
+  bindDailyChartInteractions(chart);
 }
 
 function renderStatusSummary(series, period) {
@@ -535,6 +611,8 @@ function renderStatusSummary(series, period) {
     return `<div class="status-row"><span class="status-name ${key}">${label}</span><strong>${formatPercent(percent)}</strong><span class="status-count">${totals[key]}</span></div>`;
   }).join("");
   $("#status-period-label").textContent = {
+    today: "Today",
+    last_24h: "Last 24 hours",
     current_week: "Current week",
     last_week: "Last week",
     last_month: "Last month",
@@ -550,10 +628,6 @@ async function loadAnalytics() {
     analytics.start_date,
     analytics.end_date,
   );
-  if (state.analyticsPeriod === "current_week") {
-    const today = sofiaIsoDate();
-    series = series.filter((day) => day.date <= today);
-  }
   renderDailyChart(series);
   renderStatusSummary(series, analytics.period);
 }
