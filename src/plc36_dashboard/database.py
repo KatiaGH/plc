@@ -384,6 +384,8 @@ class DashboardDatabase:
 
     def test_case_history(self, period: str = "current_week") -> dict[str, Any]:
         supported_periods = {
+            "today",
+            "last_24h",
             "current_week",
             "last_week",
             "last_month",
@@ -393,14 +395,23 @@ class DashboardDatabase:
         if period not in supported_periods:
             raise ValueError(f"Unsupported analytics period: {period}")
 
-        where = ""
+        date_filter = ""
         parameters: tuple[str, ...] = ()
         today = datetime.now(timezone.utc).date()
         current_week_start = today - timedelta(days=today.weekday())
         start_date = None
         end_date = today
+        start_timestamp = None
+        end_timestamp = None
 
-        if period == "current_week":
+        if period == "today":
+            start_date = today
+        elif period == "last_24h":
+            end_timestamp = datetime.now(timezone.utc)
+            start_timestamp = end_timestamp - timedelta(hours=24)
+            start_date = start_timestamp.date()
+            end_date = end_timestamp.date()
+        elif period == "current_week":
             start_date = current_week_start
             end_date = current_week_start + timedelta(days=6)
         elif period == "last_week":
@@ -416,25 +427,37 @@ class DashboardDatabase:
 
         if period != "max":
             assert start_date is not None
-            where = "WHERE r.created_at >= ? AND r.created_at < ?"
-            parameters = (
-                f"{start_date.isoformat()}T00:00:00",
-                f"{(end_date + timedelta(days=1)).isoformat()}T00:00:00",
-            )
+            date_filter = "AND r.created_at >= ? AND r.created_at < ?"
+            if start_timestamp is not None and end_timestamp is not None:
+                parameters = (start_timestamp.isoformat(), end_timestamp.isoformat())
+            else:
+                parameters = (
+                    f"{start_date.isoformat()}T00:00:00",
+                    f"{(end_date + timedelta(days=1)).isoformat()}T00:00:00",
+                )
 
         with self._connect() as db:
             rows = db.execute(
                 f"""
+                WITH completed_runs AS (
+                    SELECT
+                        r.id,
+                        substr(r.created_at, 1, 10) AS date
+                    FROM runs AS r
+                    WHERE r.status NOT IN ('queued', 'running', 'stopping')
+                      AND r.total > 0
+                      {date_filter}
+                )
                 SELECT
-                    substr(r.created_at, 1, 10) AS date,
+                    MAX(r.id) AS run_id,
+                    r.date,
                     SUM(tr.outcome = 'passed') AS passed,
                     SUM(tr.outcome = 'failed') AS failed,
                     SUM(tr.outcome = 'skipped') AS skipped
-                FROM runs AS r
+                FROM completed_runs AS r
                 JOIN test_results AS tr ON tr.run_id = r.id
-                {where}
-                GROUP BY substr(r.created_at, 1, 10)
-                ORDER BY date
+                GROUP BY r.date
+                ORDER BY r.date
                 """,
                 parameters,
             ).fetchall()
@@ -445,6 +468,7 @@ class DashboardDatabase:
             "end_date": end_date.isoformat(),
             "daily": [
                 {
+                    "run_id": str(row["run_id"]),
                     "date": str(row["date"]),
                     "passed": int(row["passed"] or 0),
                     "failed": int(row["failed"] or 0),
@@ -502,10 +526,15 @@ class DashboardDatabase:
             latest_metrics = []
             for row in db.execute(
                 """
-                SELECT m.name, m.value, m.unit, m.labels_json, m.run_id, m.created_at
+                SELECT
+                    m.name, m.value, m.unit, m.labels_json, m.run_id,
+                    m.nodeid, m.created_at, tr.outcome
                 FROM metrics AS m
+                LEFT JOIN test_results AS tr
+                    ON tr.run_id = m.run_id AND tr.nodeid = m.nodeid
                 WHERE m.name IN (
                     'temperature_mean', 'temperature_spread',
+                    'measured_voltage', 'accuracy_measured_voltage',
                     'raw_mae', 'calibrated_mae', 'calibrated_max_error'
                 )
                 AND m.id IN (
@@ -513,7 +542,7 @@ class DashboardDatabase:
                     GROUP BY name, labels_json
                 )
                 ORDER BY m.id DESC
-                LIMIT 20
+                LIMIT 80
                 """
             ):
                 metric = dict(row)

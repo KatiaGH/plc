@@ -6,35 +6,100 @@ from plc36_dashboard.app import app
 def test_dashboard_and_assets_are_not_cached() -> None:
     with TestClient(app) as client:
         dashboard = client.get("/")
-        javascript = client.get("/static/app.js?v=11")
+        javascript = client.get("/static/app.js?v=21")
+        stylesheet = client.get("/static/app.css?v=21")
+        summary = client.get("/api/summary")
 
     assert dashboard.status_code == 200
     assert dashboard.headers["cache-control"] == "no-store, max-age=0"
-    assert '/static/app.js?v=11' in dashboard.text
+    assert '/static/app.js?v=21' in dashboard.text
+    assert '/static/app.css?v=21' in dashboard.text
+    assert "Sums every completed test result recorded for each day" in dashboard.text
+    assert dashboard.text.count("<h1") == 1
+    assert '<h2 id="recent-runs-heading">' in dashboard.text
+    assert '<h2 id="preset-heading">' in dashboard.text
+    assert '<h2 id="individual-heading">' in dashboard.text
+    assert '<option value="today">Today</option>' in dashboard.text
+    assert '<option value="last_24h">Last 24 hours</option>' in dashboard.text
     assert ">Current week</option>" in dashboard.text
     assert ">Last week</option>" in dashboard.text
     assert 'id="tab-health"' in dashboard.text
     assert 'id="tab-tests"' in dashboard.text
     assert 'id="tab-history"' in dashboard.text
-    assert 'id="run-state-label"' in dashboard.text
+    assert 'id="active-summary"' in dashboard.text
     assert 'id="preset-heading"' in dashboard.text
-    assert 'id="run-presets"' in dashboard.text
     assert 'id="individual-test-list"' in dashboard.text
-    assert 'id="toggle-individual-tests"' in dashboard.text
     assert 'id="create-preset"' in dashboard.text
+    assert 'id="selection-message"' in dashboard.text
+    assert 'id="unavailable-list"' in dashboard.text
+    assert 'id="toggle-unavailable"' in dashboard.text
     assert 'id="preset-dialog"' in dashboard.text
     assert 'id="test-picker"' not in dashboard.text
-    assert 'id="completed-tests"' in dashboard.text
-    assert 'id="total-execution-time"' in dashboard.text
-    assert 'id="passed-percent"' in dashboard.text
-    assert 'id="failed-percent"' in dashboard.text
-    assert 'id="skipped-percent"' in dashboard.text
+    assert 'id="recent-runs-heading"' in dashboard.text
+    assert 'id="recent-runs-list"' in dashboard.text
+    assert "Last completed runs" in dashboard.text
+    assert dashboard.text.index('class="health-layout"') < dashboard.text.index('class="recent-runs-panel"')
     assert 'id="analytics-period"' in dashboard.text
     assert 'id="daily-chart"' in dashboard.text
+    assert 'id="chart-passed-total"' in dashboard.text
+    assert 'id="chart-failed-total"' in dashboard.text
+    assert 'id="chart-skipped-total"' in dashboard.text
     assert 'id="status-donut"' in dashboard.text
     assert 'id="toggle-runs"' in dashboard.text
     assert 'id="run-logs"' in dashboard.text
-    assert 'id="view-failed-tests"' in dashboard.text
+    assert "TEST CONTROL" not in dashboard.text
+    assert "LIVE RUN" not in dashboard.text
+    assert "TEST PRESETS" not in dashboard.text
+    assert "INDIVIDUAL TESTS" not in dashboard.text
+    assert 'id="run-presets"' not in dashboard.text
+    assert 'id="toggle-individual-tests"' not in dashboard.text
+    assert 'id="coverage-gaps"' not in dashboard.text
+    assert dashboard.text.count('id="selected-count"') == 1
+    assert "Hardware validation · Raspberry Pi + MegaIND HAT" not in dashboard.text
+    assert 'id="available-test-count"' not in dashboard.text
+    assert 'id="bench-state"' not in dashboard.text
+    assert 'id="bench-checked-at"' not in dashboard.text
+    assert 'id="bench-details"' not in dashboard.text
+    assert 'id="refresh-bench"' not in dashboard.text
+    assert "device-status-light" not in dashboard.text
+    assert "Operational" not in dashboard.text
+    assert "Online" not in dashboard.text
+    assert dashboard.text.count("Connected") == 1
+    assert 'class="period-tab' not in dashboard.text
+    assert 'class="chart-legend"' not in dashboard.text
+    assert 'id="measurement-source"' not in dashboard.text
+    assert 'id="hardware-metrics"' not in dashboard.text
+    assert "Latest representative measurements" not in dashboard.text
+    assert "Outputs shown at 50% setpoint" not in dashboard.text
+    assert "<th>Reference</th>" not in dashboard.text
     assert "<th>Duration</th>" not in dashboard.text
     assert javascript.status_code == 200
     assert javascript.headers["cache-control"] == "no-store, max-age=0"
+    assert "function recentCompletedRuns()" in javascript.text
+    assert ".slice(0, 5)" in javascript.text
+    assert 'class="recent-run-row' in javascript.text
+    assert "failureMeasurementContext" in javascript.text
+    assert "state.summary?.voltage_tolerance_v" in javascript.text
+    assert "± 0.6 V" not in javascript.text
+    assert "bindDailyChartInteractions" in javascript.text
+    assert "showDayTests" in javascript.text
+    assert "function selectedTestNodeids()" in javascript.text
+    assert "expandedCategoryIds: new Set()" in javascript.text
+    assert "category.available).map" in javascript.text
+    assert "A test run is currently in progress. You can prepare the next selection" in javascript.text
+    assert '$("#active-panel").classList.add("hidden")' in javascript.text
+    assert 'data-tooltip="${escapeHtml(tooltip)}"' in javascript.text
+    assert 'series.filter((day) => day.date <= today)' not in javascript.text
+    assert stylesheet.status_code == 200
+    assert stylesheet.headers["cache-control"] == "no-store, max-age=0"
+    assert ".dashboard-tab.active" in stylesheet.text
+    assert ".dashboard-tab::after" not in stylesheet.text
+    assert "font-size: 17.5px" in stylesheet.text
+    assert "width: 188px" in stylesheet.text
+    assert "height: 40px" in stylesheet.text
+    assert ".tests-panel" in stylesheet.text
+    assert ".test-category-list" in stylesheet.text
+    assert ".selection-action-panel" in stylesheet.text
+    assert '.preset-card[data-accent=' not in stylesheet.text
+    assert summary.status_code == 200
+    assert isinstance(summary.json()["voltage_tolerance_v"], float)

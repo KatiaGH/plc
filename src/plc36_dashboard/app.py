@@ -183,12 +183,19 @@ async def bench_status() -> dict[str, Any]:
 
 @app.get("/api/summary")
 async def summary() -> dict[str, Any]:
-    return await asyncio.to_thread(database.summary)
+    result = await asyncio.to_thread(database.summary)
+    try:
+        result["voltage_tolerance_v"] = load_bench().tolerances.voltage_v
+    except Exception:
+        result["voltage_tolerance_v"] = None
+    return result
 
 
 @app.get("/api/analytics")
 async def analytics(
     period: Literal[
+        "today",
+        "last_24h",
         "current_week",
         "last_week",
         "last_month",

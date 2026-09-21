@@ -16,6 +16,7 @@ class TestCategory:
     target: str
     accent: str
     available: bool = True
+    unavailable_reason: str | None = None
 
 
 CATEGORIES = (
@@ -33,6 +34,7 @@ CATEGORIES = (
         "tests/0V_10V_outputs/test_output_accuracy.py",
         "blue",
         available=False,
+        unavailable_reason="Test temporarily excluded",
     ),
     TestCategory(
         "onewire",
@@ -41,6 +43,7 @@ CATEGORIES = (
         "tests/1_wire_interface/test_ds18b20.py",
         "violet",
         available=False,
+        unavailable_reason="Test temporarily excluded",
     ),
     TestCategory(
         "mpi_relays",
@@ -70,6 +73,7 @@ CATEGORIES = (
         "tests/4mA_20mA_inputs/test_current_loop.py",
         "slate",
         available=False,
+        unavailable_reason="Hardware path not implemented",
     ),
     TestCategory(
         "rs485",
@@ -78,6 +82,7 @@ CATEGORIES = (
         "tests/rs485/test_rs485.py",
         "slate",
         available=False,
+        unavailable_reason="Hardware path not implemented",
     ),
 )
 
