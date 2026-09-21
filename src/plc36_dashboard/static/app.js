@@ -542,7 +542,7 @@ function renderDailyChart(series) {
   const left = 52;
   const right = 18;
   const top = 12;
-  const bottom = 46;
+  const bottom = 55;
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
   const largest = Math.max(0, ...series.map((day) => day.passed + day.failed + day.skipped));
@@ -562,7 +562,7 @@ function renderDailyChart(series) {
   const labels = labelIndexes.map((index) => {
     const label = chartDateParts(series[index].date);
     const center = x(index) + barWidth / 2;
-    return `<text x="${center}" y="${height - 23}" class="chart-axis-label" text-anchor="middle"><tspan x="${center}">${escapeHtml(label.weekday)}</tspan><tspan x="${center}" dy="15">${escapeHtml(label.date)}</tspan></text>`;
+    return `<text x="${center}" y="${height - 30}" class="chart-axis-label" text-anchor="middle"><tspan x="${center}">${escapeHtml(label.weekday)}</tspan><tspan x="${center}" dy="14">${escapeHtml(label.date)}</tspan></text>`;
   }).join("");
   const bars = series.map((day, index) => {
     const total = day.passed + day.failed + day.skipped;
