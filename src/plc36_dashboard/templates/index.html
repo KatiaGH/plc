@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Run and monitor PLC-36 hardware tests.">
   <title>PLC-36 Test Dashboard</title>
-  <link rel="stylesheet" href="/static/app.css?v=20">
+  <link rel="stylesheet" href="/static/app.css?v=21">
 </head>
 <body>
   <div class="shell">
@@ -79,54 +79,62 @@
       </section>
 
       <section class="tab-panel" id="panel-tests" role="tabpanel" aria-labelledby="tab-tests" data-panel="tests" hidden>
-        <div class="section-heading panel-heading test-panel-heading">
-          <div><p class="eyebrow">TEST CONTROL</p><h2>Tests</h2></div>
-          <div class="test-heading-actions"><span class="coverage-gaps" id="coverage-gaps" hidden></span><span class="selection-count">Choose a preset or individual tests below</span></div>
-        </div>
         <section class="active-panel hidden" id="active-panel" aria-labelledby="active-title">
-          <div class="active-header">
-            <div><p class="eyebrow" id="run-state-label"><span class="pulse-dot"></span> LIVE RUN</p><h3 id="active-title">Preparing test run</h3><p id="current-test">Waiting for collection…</p></div>
+          <header class="section-bar active-header">
+            <div>
+              <h2 id="active-title">Test run in progress</h2>
+              <h3 id="current-test">Collecting selected tests…</h3>
+              <p id="active-summary" aria-live="polite">0 of 0 tests completed · 0 passed · 0 failed · 0 skipped</p>
+            </div>
             <div class="active-actions">
-              <button class="secondary-button hidden" id="view-failed-tests" type="button">View failed tests</button>
+              <strong class="progress-value" id="progress-value">0%</strong>
               <button class="stop-button" id="stop-run" type="button" disabled>Stop</button>
             </div>
-          </div>
-          <div class="progress-track" aria-label="Test progress"><span id="progress-bar"></span></div>
-          <div class="run-counters"><span><strong id="progress-value">0%</strong> complete</span><span class="passed"><strong id="passed-count">0</strong> passed</span><span class="failed"><strong id="failed-count">0</strong> failed</span><span class="skipped"><strong id="skipped-count">0</strong> skipped</span></div>
+          </header>
+          <div class="active-progress"><div class="progress-track" aria-label="Test progress"><span id="progress-bar"></span></div></div>
+          <div class="sr-only" aria-live="polite"><span id="passed-count">0</span> passed, <span id="failed-count">0</span> failed, <span id="skipped-count">0</span> skipped</div>
         </section>
-        <section class="test-selection-block" aria-labelledby="preset-heading">
-          <div class="test-subsection-heading">
+        <section class="tests-panel preset-panel" aria-labelledby="preset-heading">
+          <header class="section-bar tests-section-header">
             <div>
-              <p class="eyebrow">TEST PRESETS</p>
-              <h3 id="preset-heading">Test presets</h3>
-              <p>Choose one or more presets to combine their tests into a single run.</p>
+              <h2 id="preset-heading">Test presets</h2>
+              <p>Select one or more groups to run together.</p>
             </div>
-            <div class="selection-actions">
-              <span class="selection-count" id="selected-preset-count">0 selected</span>
-              <button class="primary-button" id="run-presets" type="button" disabled>Run selected presets</button>
-            </div>
-          </div>
+          </header>
           <div class="preset-grid" id="test-grid" aria-live="polite"></div>
         </section>
 
-        <section class="test-selection-block individual-selection" aria-labelledby="individual-heading">
-          <div class="test-subsection-heading">
+        <section class="tests-panel individual-selection" aria-labelledby="individual-heading">
+          <header class="section-bar tests-section-header">
             <div>
-              <p class="eyebrow">INDIVIDUAL TESTS</p>
-              <h3 id="individual-heading">Choose individual tests</h3>
-              <p>Select tests directly, or save the selection as a reusable preset.</p>
+              <h2 id="individual-heading">Choose individual tests</h2>
+              <p>Select specific cases or create a reusable preset.</p>
             </div>
-            <div class="selection-actions">
-              <button class="secondary-button" id="create-preset" type="button" disabled>Create preset</button>
-              <button class="primary-button" id="run-selected" type="button" disabled>Run selected tests</button>
+          </header>
+          <div class="test-category-list" id="individual-test-list" aria-live="polite"></div>
+        </section>
+
+        <section class="tests-panel unavailable-panel" aria-labelledby="unavailable-heading">
+          <header class="section-bar tests-section-header">
+            <div>
+              <h2 id="unavailable-heading">Unavailable test groups <span id="unavailable-count">(0)</span></h2>
+              <p>These tests cannot currently be run on this bench.</p>
             </div>
+            <button class="text-button" id="toggle-unavailable" type="button" aria-expanded="false" aria-controls="unavailable-list">View coverage gaps</button>
+          </header>
+          <div class="unavailable-list" id="unavailable-list" hidden></div>
+        </section>
+
+        <section class="selection-action-panel" aria-label="Test selection actions">
+          <div class="selection-summary">
+            <strong><span id="selected-count">0</span> tests selected</strong>
+            <p id="selection-message">Select a preset or individual tests to continue.</p>
           </div>
-          <div class="individual-toolbar">
-            <span><strong id="selected-count">0</strong> selected</span>
-            <button class="text-button" id="clear-tests" type="button">Clear selection</button>
+          <div class="selection-actions">
+            <button class="text-button" id="clear-tests" type="button" disabled>Clear selection</button>
+            <button class="secondary-button" id="create-preset" type="button" disabled>Create preset</button>
+            <button class="primary-button" id="run-selected" type="button" aria-describedby="selection-message" disabled>Run selected tests</button>
           </div>
-          <div class="individual-test-list" id="individual-test-list" aria-live="polite"></div>
-          <div class="test-list-actions"><button class="text-button" id="toggle-individual-tests" type="button">Show more tests</button></div>
         </section>
       </section>
 
@@ -148,7 +156,7 @@
   <dialog id="preset-dialog" class="picker-dialog">
     <form class="dialog-shell" id="preset-form">
       <header>
-        <div><p class="eyebrow">CUSTOM PRESET</p><h2>Create a test preset</h2></div>
+        <div><h2>Create a test preset</h2></div>
         <button class="dialog-close" id="close-preset" type="button" aria-label="Close">×</button>
       </header>
       <label class="preset-name-field">
@@ -184,6 +192,6 @@
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=20" defer></script>
+  <script src="/static/app.js?v=21" defer></script>
 </body>
 </html>

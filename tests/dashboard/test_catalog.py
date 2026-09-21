@@ -11,6 +11,11 @@ def test_catalog_marks_disabled_tests_unavailable() -> None:
     assert states["current_loop"] is False
     assert states["onewire"] is False
     assert states["output_accuracy"] is False
+    assert all(
+        category.unavailable_reason
+        for category in CATEGORIES
+        if not category.available
+    )
 
 
 def test_pytest_collection_returns_individual_nodeids() -> None:

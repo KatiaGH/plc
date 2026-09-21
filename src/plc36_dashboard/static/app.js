@@ -7,11 +7,12 @@ const state = {
   lastCompletedRunId: null,
   eventSource: null,
   benchReady: false,
-  showAllIndividualTests: false,
+  expandedCategoryIds: new Set(),
   showAllRuns: false,
   runs: [],
   analyticsPeriod: "current_week",
   controlsLocked: false,
+  controlBlockReason: null,
   summary: null,
   latestCompletedRun: null,
   latestRunDetail: null,
@@ -135,31 +136,50 @@ function shortSelection(run) {
   return `${run.selection?.length || 0} selected tests`;
 }
 
-function setControlsDisabled(disabled) {
+function controlBlockedMessage() {
+  if (state.controlBlockReason === "busy") {
+    return "A test run is currently in progress. You can prepare the next selection, but it cannot start until the bench is available.";
+  }
+  if (state.controlBlockReason === "offline" || !state.benchReady) {
+    return "The PLC and HAT must be connected before tests can start.";
+  }
+  return "";
+}
+
+function setDisabledExplanation(button, reason) {
+  const label = button.dataset.defaultAriaLabel || button.textContent.trim();
+  button.dataset.defaultAriaLabel = label;
+  button.disabled = Boolean(reason);
+  button.title = reason || "";
+  button.setAttribute("aria-label", reason ? `${label}. ${reason}` : label);
+}
+
+function setControlsDisabled(disabled, reason = null) {
   state.controlsLocked = disabled;
-  $("#run-all").disabled = disabled || !state.benchReady;
-  updatePresetControls();
-  updateIndividualControls();
+  state.controlBlockReason = disabled ? reason : null;
+  setDisabledExplanation($("#run-all"), disabled || !state.benchReady ? controlBlockedMessage() : "");
+  updateSelectionControls();
   if (state.latestCompletedRun) {
-    $("#rerun-failures").disabled = disabled || !state.benchReady || Number(state.latestCompletedRun.failed) === 0;
+    const rerunReason = Number(state.latestCompletedRun.failed) === 0
+      ? "The latest completed run has no failures to rerun."
+      : (disabled || !state.benchReady ? controlBlockedMessage() : "");
+    setDisabledExplanation($("#rerun-failures"), rerunReason);
   }
 }
 
 async function loadCatalog() {
   const catalog = await api("/api/catalog");
   state.catalog = catalog;
-  const gapCount = catalog.categories.filter((category) => !category.available).length;
-  const coverageGaps = $("#coverage-gaps");
-  coverageGaps.hidden = gapCount === 0;
-  coverageGaps.textContent = `${gapCount} coverage gap${gapCount === 1 ? "" : "s"}`;
   renderPresetCards();
   renderIndividualTests();
+  renderUnavailableGroups();
   if (catalog.collection_error) toast(`Test collection warning: ${catalog.collection_error}`, true);
 }
 
 async function loadPresets() {
   state.presets = await api("/api/presets");
   renderPresetCards();
+  renderUnavailableGroups();
 }
 
 function availablePresetTests(key) {
@@ -171,38 +191,38 @@ function availablePresetTests(key) {
   return state.presets.find((preset) => preset.id === presetId)?.tests || [];
 }
 
-function renderPresetCards() {
-  const builtIn = state.catalog.categories.map((category) => ({
-    key: `category:${category.id}`,
-    name: category.name,
-    description: category.description,
-    accent: category.accent,
-    available: category.available,
-    testCount: category.test_count,
-    kind: "Built-in preset",
-  }));
-  const custom = state.presets.map((preset) => ({
+function customPresetDefinitions() {
+  const availableNodeids = new Set(state.catalog.tests.map((test) => test.nodeid));
+  return state.presets.map((preset) => ({
     key: `custom:${preset.id}`,
     name: preset.name,
     description: `Custom preset containing ${preset.tests.length} selected test${preset.tests.length === 1 ? "" : "s"}.`,
-    accent: "cyan",
-    available: true,
+    available: preset.tests.length > 0 && preset.tests.every((nodeid) => availableNodeids.has(nodeid)),
     testCount: preset.tests.length,
     kind: "Custom preset",
   }));
+}
+
+function renderPresetCards() {
+  const builtIn = state.catalog.categories.filter((category) => category.available).map((category) => ({
+    key: `category:${category.id}`,
+    name: category.name,
+    description: category.description,
+    testCount: category.test_count,
+    kind: "Built-in preset",
+  }));
+  const custom = customPresetDefinitions().filter((preset) => preset.available);
   const presets = [...builtIn, ...custom];
-  $("#test-grid").innerHTML = presets.map((preset, index) => {
+  $("#test-grid").innerHTML = presets.length ? presets.map((preset) => {
     const selected = state.selectedPresetIds.has(preset.key);
-    const count = preset.available ? `${preset.testCount} test${preset.testCount === 1 ? "" : "s"}` : "Planned";
+    const count = `${preset.testCount} test${preset.testCount === 1 ? "" : "s"}`;
     return `
-      <button class="preset-card${selected ? " selected" : ""}" type="button" data-preset-key="${escapeHtml(preset.key)}" data-accent="${escapeHtml(preset.accent)}" aria-pressed="${selected}" ${preset.available ? "" : "disabled"}>
-        <span class="preset-index">${String(index + 1).padStart(2, "0")}</span>
-        <span class="preset-content"><strong>${escapeHtml(preset.name)}</strong><small>${escapeHtml(preset.kind)}</small></span>
-        <span class="preset-count">${count}</span>
-        <span class="preset-check" aria-hidden="true">${selected ? "✓" : "+"}</span>
+      <button class="preset-card${selected ? " selected" : ""}" type="button" data-preset-key="${escapeHtml(preset.key)}" aria-pressed="${selected}">
+        <span class="preset-content"><strong>${escapeHtml(preset.name)}</strong><small>${escapeHtml(preset.kind)}</small><span class="preset-count">${count}</span></span>
+        <span class="preset-check" aria-hidden="true">${selected ? "✓" : ""}</span>
         <span class="sr-only">${escapeHtml(preset.description)}</span>
       </button>`;
-  }).join("");
+  }).join("") : '<p class="empty-cell">No available presets were found.</p>';
   $("#test-grid").querySelectorAll("[data-preset-key]").forEach((card) => {
     card.addEventListener("click", () => {
       const key = card.dataset.presetKey;
@@ -211,26 +231,58 @@ function renderPresetCards() {
       renderPresetCards();
     });
   });
-  updatePresetControls();
+  updateSelectionControls();
 }
 
-function updatePresetControls() {
-  const count = state.selectedPresetIds.size;
-  $("#selected-preset-count").textContent = `${count} selected`;
-  $("#run-presets").disabled = state.controlsLocked || !state.benchReady || count === 0;
+function selectedTestNodeids() {
+  return [...new Set([
+    ...state.selectedTests,
+    ...[...state.selectedPresetIds].flatMap(availablePresetTests),
+  ])];
 }
 
 function renderIndividualTests() {
-  const tests = state.showAllIndividualTests ? state.catalog.tests : state.catalog.tests.slice(0, 10);
-  $("#individual-test-list").innerHTML = tests.length ? tests.map((test, index) => {
-    const selected = state.selectedTests.has(test.nodeid);
-    return `
-      <label class="individual-test${selected ? " selected" : ""}">
-        <span class="individual-test-index">${String(index + 1).padStart(2, "0")}</span>
+  const groups = state.catalog.categories.filter((category) => category.available).map((category) => ({
+    ...category,
+    tests: state.catalog.tests.filter((test) => test.category_id === category.id),
+  }));
+  $("#individual-test-list").innerHTML = groups.length ? groups.map((group) => {
+    const expanded = state.expandedCategoryIds.has(group.id);
+    const allSelected = group.tests.length > 0 && group.tests.every((test) => state.selectedTests.has(test.nodeid));
+    const tests = group.tests.map((test) => {
+      const selected = state.selectedTests.has(test.nodeid);
+      return `<label class="individual-test${selected ? " selected" : ""}">
         <input type="checkbox" value="${escapeHtml(test.nodeid)}" ${selected ? "checked" : ""}>
-        <span class="individual-test-copy"><strong>${escapeHtml(test.name)}</strong><small>${escapeHtml(test.category_name)}</small></span>
+        <span class="individual-test-copy"><strong>${escapeHtml(test.name)}</strong></span>
       </label>`;
+    }).join("") || '<p class="empty-cell">No tests were collected for this group.</p>';
+    return `<section class="test-category" data-category-id="${escapeHtml(group.id)}">
+      <div class="test-category-header">
+        <button class="category-toggle" type="button" data-category-toggle="${escapeHtml(group.id)}" aria-expanded="${expanded}" aria-controls="category-tests-${escapeHtml(group.id)}">
+          <span class="category-title"><strong>${escapeHtml(group.name)}</strong><small>${group.tests.length} test${group.tests.length === 1 ? "" : "s"}</small></span>
+          <span class="category-chevron" aria-hidden="true">›</span>
+        </button>
+        <button class="text-button category-select" type="button" data-select-category="${escapeHtml(group.id)}" ${group.tests.length ? "" : "disabled"}>${allSelected ? "Clear group" : "Select all"}</button>
+      </div>
+      <div class="category-tests" id="category-tests-${escapeHtml(group.id)}" ${expanded ? "" : "hidden"}>${tests}</div>
+    </section>`;
   }).join("") : '<p class="empty-cell">No individual tests were collected.</p>';
+  $("#individual-test-list").querySelectorAll("[data-category-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const categoryId = button.dataset.categoryToggle;
+      if (state.expandedCategoryIds.has(categoryId)) state.expandedCategoryIds.delete(categoryId);
+      else state.expandedCategoryIds.add(categoryId);
+      renderIndividualTests();
+    });
+  });
+  $("#individual-test-list").querySelectorAll("[data-select-category]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const tests = state.catalog.tests.filter((test) => test.category_id === button.dataset.selectCategory);
+      const allSelected = tests.length > 0 && tests.every((test) => state.selectedTests.has(test.nodeid));
+      tests.forEach((test) => state.selectedTests[allSelected ? "delete" : "add"](test.nodeid));
+      renderIndividualTests();
+    });
+  });
   $("#individual-test-list").querySelectorAll("input[type=checkbox]").forEach((input) => {
     input.addEventListener("change", () => {
       if (input.checked) state.selectedTests.add(input.value);
@@ -238,28 +290,55 @@ function renderIndividualTests() {
       renderIndividualTests();
     });
   });
-  $("#toggle-individual-tests").classList.toggle("hidden", state.catalog.tests.length <= 10);
-  $("#toggle-individual-tests").textContent = state.showAllIndividualTests ? "Show first 10" : "Show more tests";
-  updateIndividualControls();
+  updateSelectionControls();
 }
 
-function updateIndividualControls() {
-  $("#selected-count").textContent = state.selectedTests.size;
-  $("#run-selected").disabled = state.controlsLocked || !state.benchReady || state.selectedTests.size === 0;
-  $("#create-preset").disabled = state.selectedTests.size === 0;
-  $("#clear-tests").disabled = state.selectedTests.size === 0;
+function renderUnavailableGroups() {
+  const groups = [
+    ...state.catalog.categories.filter((category) => !category.available).map((category) => ({
+      name: category.name,
+      reason: category.unavailable_reason || "Not available on this bench",
+    })),
+    ...customPresetDefinitions().filter((preset) => !preset.available).map((preset) => ({
+      name: preset.name,
+      reason: "Some tests in this custom preset are no longer available",
+    })),
+  ];
+  $("#unavailable-count").textContent = `(${groups.length})`;
+  $("#unavailable-list").innerHTML = groups.length ? groups.map((group) => `
+    <article class="unavailable-row">
+      <strong>${escapeHtml(group.name)}</strong>
+      <span class="unavailable-reason">${escapeHtml(group.reason)}</span>
+    </article>`).join("") : '<p class="empty-cell">No unavailable test groups.</p>';
+  $("#toggle-unavailable").hidden = groups.length === 0;
 }
 
-function runSelectedPresets() {
-  const tests = [...new Set([...state.selectedPresetIds].flatMap(availablePresetTests))];
-  if (!tests.length) return toast("Choose at least one available preset.", true);
-  startRun("tests", tests);
+function toggleUnavailableGroups() {
+  const button = $("#toggle-unavailable");
+  const list = $("#unavailable-list");
+  const expanded = button.getAttribute("aria-expanded") !== "true";
+  button.setAttribute("aria-expanded", String(expanded));
+  button.textContent = expanded ? "Hide coverage gaps" : "View coverage gaps";
+  list.hidden = !expanded;
+}
+
+function updateSelectionControls() {
+  const tests = selectedTestNodeids();
+  const count = tests.length;
+  const blocked = controlBlockedMessage();
+  const reason = blocked || (count === 0 ? "Select at least one preset or individual test." : "");
+  $("#selected-count").textContent = count;
+  $("#clear-tests").disabled = count === 0;
+  $("#create-preset").disabled = count === 0;
+  setDisabledExplanation($("#run-selected"), reason);
+  $("#selection-message").textContent = reason || `${count} unique test${count === 1 ? " is" : "s are"} ready to run.`;
 }
 
 function openPresetDialog() {
-  if (!state.selectedTests.size) return;
+  const tests = selectedTestNodeids();
+  if (!tests.length) return;
   $("#preset-name").value = "";
-  $("#preset-test-count").textContent = state.selectedTests.size;
+  $("#preset-test-count").textContent = tests.length;
   $("#preset-dialog").showModal();
   $("#preset-name").focus();
 }
@@ -273,7 +352,7 @@ async function savePreset(event) {
   try {
     const preset = await api("/api/presets", {
       method: "POST",
-      body: JSON.stringify({ name, tests: [...state.selectedTests] }),
+      body: JSON.stringify({ name, tests: selectedTestNodeids() }),
     });
     state.presets.push(preset);
     state.selectedPresetIds.add(`custom:${preset.id}`);
@@ -304,13 +383,13 @@ async function loadBench() {
     setConnectionStatus("#hat-state", hatActive);
     $("#bench-status").textContent = `PLC ${dutActive ? "connected" : "disconnected"}; HAT ${hatActive ? "connected" : "disconnected"}; Raspberry Pi connected`;
     if (bench.active_run_id && !state.activeRunId) connectRun(bench.active_run_id);
-    setControlsDisabled(reserved || !bench.ready);
+    setControlsDisabled(reserved || !bench.ready, reserved ? "busy" : "offline");
   } catch (error) {
     state.benchReady = false;
     setConnectionStatus("#dut-state", false);
     setConnectionStatus("#hat-state", false);
     $("#bench-status").textContent = "PLC disconnected; HAT disconnected; Raspberry Pi connected";
-    setControlsDisabled(true);
+    setControlsDisabled(true, "offline");
     toast(error.message, true);
   }
 }
@@ -331,7 +410,8 @@ function renderHealthOverview() {
   state.latestCompletedRun = run;
   if (!run) {
     $("#recent-runs-list").innerHTML = '<p class="empty-state">No completed runs yet.</p>';
-    ["#rerun-failures", "#view-latest-failures"].forEach((selector) => { $(selector).disabled = true; });
+    setDisabledExplanation($("#rerun-failures"), "No completed run is available to rerun.");
+    $("#view-latest-failures").disabled = true;
     $("#last-all-passing").textContent = "Last all-passing full run: none recorded";
     renderAttention([]);
     return;
@@ -349,7 +429,10 @@ function renderHealthOverview() {
   $("#recent-runs-list").querySelectorAll(".recent-run-details").forEach((button) => {
     button.addEventListener("click", () => showRunDetail(button.dataset.runId));
   });
-  $("#rerun-failures").disabled = Number(run.failed) === 0 || Boolean(state.activeRunId) || !state.benchReady;
+  const rerunReason = Number(run.failed) === 0
+    ? "The latest completed run has no failures to rerun."
+    : (state.activeRunId || !state.benchReady ? controlBlockedMessage() : "");
+  setDisabledExplanation($("#rerun-failures"), rerunReason);
   $("#view-latest-failures").disabled = Number(run.failed) === 0;
   const allPassing = state.runs.find((item) => item.selection_type === "all" && item.status === "passed" && Number(item.failed) === 0);
   $("#last-all-passing").textContent = allPassing
@@ -709,7 +792,7 @@ async function rerunLatestFailures() {
 async function startRun(selectionType, selection) {
   if (state.activeRunId) return toast("A test run is already active.", true);
   try {
-    setControlsDisabled(true);
+    setControlsDisabled(true, "busy");
     const run = await api("/api/runs", {
       method: "POST",
       body: JSON.stringify({ selection_type: selectionType, selection, capture_dut_logs: false }),
@@ -721,7 +804,7 @@ async function startRun(selectionType, selection) {
     connectRun(run.id);
     toast("Test run started.");
   } catch (error) {
-    setControlsDisabled(false);
+    await loadBench();
     toast(error.message, true);
   }
 }
@@ -730,14 +813,14 @@ function connectRun(runId) {
   state.activeRunId = runId;
   activateTab("tests");
   $("#active-panel").classList.remove("hidden");
-  const runStateLabel = $("#run-state-label");
-  if (runStateLabel) runStateLabel.innerHTML = '<span class="pulse-dot"></span> LIVE RUN';
   $("#active-title").textContent = "Test run in progress";
   $("#current-test").textContent = "Collecting selected tests…";
+  $("#active-summary").textContent = "0 of 0 tests completed · 0 passed · 0 failed · 0 skipped";
+  $("#progress-bar").style.width = "0%";
+  $("#progress-value").textContent = "0%";
   $("#stop-run").classList.remove("hidden");
   $("#stop-run").disabled = true;
-  $("#view-failed-tests").classList.add("hidden");
-  setControlsDisabled(true);
+  setControlsDisabled(true, "busy");
   $("#active-panel").scrollIntoView({ behavior: "smooth", block: "start" });
   if (state.eventSource) state.eventSource.close();
   const source = new EventSource(`/api/runs/${encodeURIComponent(runId)}/events`);
@@ -750,11 +833,8 @@ function connectRun(runId) {
     state.lastCompletedRunId = run.id;
     state.activeRunId = null;
     state.eventSource = null;
-    const completedStateLabel = $("#run-state-label");
-    if (completedStateLabel) completedStateLabel.textContent = "RUN COMPLETE";
-    $("#active-title").textContent = run.status === "passed" ? "Run completed successfully" : `Run ${run.status}`;
     $("#stop-run").classList.add("hidden");
-    $("#view-failed-tests").classList.toggle("hidden", run.failed === 0);
+    $("#active-panel").classList.add("hidden");
     await Promise.all([loadBench(), loadSummary(), loadRuns(), loadAnalytics()]);
     const message = run.status === "passed" ? "All selected tests passed." : run.status === "skipped" ? "Tests were skipped because the bench was unavailable." : `Test run ${run.status}.`;
     toast(message, !["passed", "skipped"].includes(run.status));
@@ -772,9 +852,12 @@ function updateActiveRun(run) {
   $("#passed-count").textContent = run.passed;
   $("#failed-count").textContent = run.failed;
   $("#skipped-count").textContent = run.skipped;
+  $("#active-summary").textContent = `${completed} of ${run.total || 0} tests completed · ${run.passed} passed · ${run.failed} failed · ${run.skipped} skipped`;
   $("#current-test").textContent = run.current_test_name
     || (run.current_nodeid ? friendlyTestName(run.current_nodeid) : null)
     || (run.status === "stopping" ? "Waiting for safe fixture cleanup…" : `${completed} of ${run.total || "?"} complete`);
+  const terminal = ["passed", "failed", "error", "stopped", "skipped"].includes(run.status);
+  $("#stop-run").classList.toggle("hidden", terminal);
   $("#stop-run").disabled = run.status !== "running";
 }
 
@@ -867,21 +950,19 @@ $("#view-latest-failures").addEventListener("click", () => {
   if (state.latestCompletedRun) showRunDetail(state.latestCompletedRun.id, true);
 });
 $("#rerun-failures").addEventListener("click", rerunLatestFailures);
-$("#run-presets").addEventListener("click", runSelectedPresets);
-$("#toggle-individual-tests").addEventListener("click", () => {
-  state.showAllIndividualTests = !state.showAllIndividualTests;
+$("#toggle-unavailable").addEventListener("click", toggleUnavailableGroups);
+$("#clear-tests").addEventListener("click", () => {
+  state.selectedTests.clear();
+  state.selectedPresetIds.clear();
+  renderPresetCards();
   renderIndividualTests();
 });
-$("#clear-tests").addEventListener("click", () => { state.selectedTests.clear(); renderIndividualTests(); });
-$("#run-selected").addEventListener("click", () => startRun("tests", [...state.selectedTests]));
+$("#run-selected").addEventListener("click", () => startRun("tests", selectedTestNodeids()));
 $("#create-preset").addEventListener("click", openPresetDialog);
 $("#preset-form").addEventListener("submit", savePreset);
 $("#close-preset").addEventListener("click", () => $("#preset-dialog").close());
 $("#cancel-preset").addEventListener("click", () => $("#preset-dialog").close());
 $("#stop-run").addEventListener("click", stopActiveRun);
-$("#view-failed-tests").addEventListener("click", () => {
-  if (state.lastCompletedRunId) showRunDetail(state.lastCompletedRunId, true);
-});
 $("#refresh-runs").addEventListener("click", async () => { await Promise.all([loadSummary(), loadRuns(), loadAnalytics()]); toast("Run history refreshed."); });
 $("#toggle-runs").addEventListener("click", () => { state.showAllRuns = !state.showAllRuns; renderRuns(); });
 $("#analytics-period").addEventListener("change", async (event) => { state.analyticsPeriod = event.target.value; await loadAnalytics(); });
