@@ -6,14 +6,15 @@ from plc36_dashboard.app import app
 def test_dashboard_and_assets_are_not_cached() -> None:
     with TestClient(app) as client:
         dashboard = client.get("/")
-        javascript = client.get("/static/app.js?v=19")
-        stylesheet = client.get("/static/app.css?v=19")
+        javascript = client.get("/static/app.js?v=20")
+        stylesheet = client.get("/static/app.css?v=20")
         summary = client.get("/api/summary")
 
     assert dashboard.status_code == 200
     assert dashboard.headers["cache-control"] == "no-store, max-age=0"
-    assert '/static/app.js?v=19' in dashboard.text
-    assert '/static/app.css?v=19' in dashboard.text
+    assert '/static/app.js?v=20' in dashboard.text
+    assert '/static/app.css?v=20' in dashboard.text
+    assert "Sums every completed test result recorded for each day" in dashboard.text
     assert dashboard.text.count("<h1") == 1
     assert '<h2 id="recent-runs-heading">' in dashboard.text
     assert '<h3 id="preset-heading">' in dashboard.text
@@ -81,5 +82,8 @@ def test_dashboard_and_assets_are_not_cached() -> None:
     assert stylesheet.headers["cache-control"] == "no-store, max-age=0"
     assert ".dashboard-tab.active" in stylesheet.text
     assert ".dashboard-tab::after" not in stylesheet.text
+    assert "font-size: 17.5px" in stylesheet.text
+    assert "width: 188px" in stylesheet.text
+    assert "height: 40px" in stylesheet.text
     assert summary.status_code == 200
     assert isinstance(summary.json()["voltage_tolerance_v"], float)

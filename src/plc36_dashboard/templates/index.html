@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Run and monitor PLC-36 hardware tests.">
   <title>PLC-36 Test Dashboard</title>
-  <link rel="stylesheet" href="/static/app.css?v=19">
+  <link rel="stylesheet" href="/static/app.css?v=20">
 </head>
 <body>
   <div class="shell">
@@ -47,7 +47,7 @@
         <div class="health-layout">
           <section class="trend-panel" aria-labelledby="trend-heading">
             <header class="section-bar chart-heading">
-              <div class="section-title-line"><h2 id="trend-heading">Test health by day</h2><button class="help-button" type="button" aria-label="About this chart" data-tooltip="Shows the latest comparable full run for each day. Select a populated bar to view all test results recorded that day.">?</button></div>
+              <div class="section-title-line"><h2 id="trend-heading">Test health by day</h2><button class="help-button" type="button" aria-label="About this chart" data-tooltip="Sums every completed test result recorded for each day. Select a populated bar to view those test results.">?</button></div>
               <div class="chart-heading-controls">
                 <div class="chart-totals" aria-label="Chart totals"><span class="pass">Passed <strong id="chart-passed-total">0</strong></span><span class="fail">Failed <strong id="chart-failed-total">0</strong></span><span class="skip">Skipped <strong id="chart-skipped-total">0</strong></span></div>
                 <label class="period-control"><span>Period:</span><select id="analytics-period"><option value="today">Today</option><option value="last_24h">Last 24 hours</option><option value="current_week" selected>Current week</option><option value="last_week">Last week</option><option value="last_month">Last month</option><option value="last_year">Last year</option><option value="max">Max</option></select></label>
@@ -184,6 +184,6 @@
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=19" defer></script>
+  <script src="/static/app.js?v=20" defer></script>
 </body>
 </html>

@@ -89,13 +89,18 @@ def test_database_records_results_and_metrics(tmp_path: Path) -> None:
     assert last_24h["daily"][-1]["passed"] == 1
 
 
-def test_history_uses_only_latest_full_run_per_day(tmp_path: Path) -> None:
+def test_history_sums_every_completed_test_result_per_day(tmp_path: Path) -> None:
     database = DashboardDatabase(tmp_path / "dashboard.sqlite3")
 
-    for run_id, outcome in (("full-run-1", "passed"), ("full-run-2", "failed")):
+    runs = (
+        ("full-run-1", "passed", "all"),
+        ("full-run-2", "failed", "all"),
+        ("selected-run", "passed", "tests"),
+    )
+    for run_id, outcome, selection_type in runs:
         database.create_run(
             run_id=run_id,
-            selection_type="all",
+            selection_type=selection_type,
             selection=[],
             git_sha="abc1234",
             dut_ip="192.168.10.247",
@@ -117,5 +122,5 @@ def test_history_uses_only_latest_full_run_per_day(tmp_path: Path) -> None:
         )
 
     analytics = database.test_case_history("current_week")
-    assert analytics["daily"][-1]["passed"] == 0
+    assert analytics["daily"][-1]["passed"] == 2
     assert analytics["daily"][-1]["failed"] == 1

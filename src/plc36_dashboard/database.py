@@ -439,34 +439,24 @@ class DashboardDatabase:
         with self._connect() as db:
             rows = db.execute(
                 f"""
-                WITH ranked_runs AS (
+                WITH completed_runs AS (
                     SELECT
                         r.id,
-                        substr(r.created_at, 1, 10) AS date,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY substr(r.created_at, 1, 10)
-                            ORDER BY r.created_at DESC, r.id DESC
-                        ) AS day_rank
+                        substr(r.created_at, 1, 10) AS date
                     FROM runs AS r
-                    WHERE r.selection_type = 'all'
-                      AND r.status NOT IN ('queued', 'running', 'stopping')
+                    WHERE r.status NOT IN ('queued', 'running', 'stopping')
                       AND r.total > 0
                       {date_filter}
-                ),
-                canonical_runs AS (
-                    SELECT id, date
-                    FROM ranked_runs
-                    WHERE day_rank = 1
                 )
                 SELECT
-                    r.id AS run_id,
+                    MAX(r.id) AS run_id,
                     r.date,
                     SUM(tr.outcome = 'passed') AS passed,
                     SUM(tr.outcome = 'failed') AS failed,
                     SUM(tr.outcome = 'skipped') AS skipped
-                FROM canonical_runs AS r
+                FROM completed_runs AS r
                 JOIN test_results AS tr ON tr.run_id = r.id
-                GROUP BY r.id, r.date
+                GROUP BY r.date
                 ORDER BY r.date
                 """,
                 parameters,

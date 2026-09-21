@@ -568,7 +568,7 @@ function renderDailyChart(series) {
   const chart = $("#daily-chart");
   if (!totalCases) {
     chart.classList.add("empty");
-    chart.innerHTML = '<div class="chart-empty-state"><strong>No comparable full runs</strong><span>No complete “Run all tests” execution was recorded in the selected period.</span></div>';
+    chart.innerHTML = '<div class="chart-empty-state"><strong>No completed tests</strong><span>No completed test results were recorded in the selected period.</span></div>';
     return;
   }
   chart.classList.remove("empty");
